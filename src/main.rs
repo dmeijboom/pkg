@@ -7,6 +7,7 @@ mod cmd;
 mod config;
 mod download;
 mod pkgscript;
+mod store;
 
 #[derive(Parser, Debug)]
 struct Args {

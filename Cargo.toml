@@ -7,6 +7,8 @@ edition = "2021"
 
 [dependencies]
 url = "2.2.2"
+hex = "0.4.3"
+sha2 = "0.10.2"
 colored = "2.0.0"
 anyhow = "1.0.57"
 fs_extra = "1.2.0"

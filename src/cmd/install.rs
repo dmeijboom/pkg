@@ -12,6 +12,7 @@ use temp_dir::TempDir;
 use crate::config::Package;
 use crate::download::download;
 use crate::pkgscript::{Instruction, Parser};
+use crate::store::{Action, Store, Transaction};
 
 #[derive(ClapParser, Debug)]
 pub struct Opts {
@@ -38,11 +39,9 @@ pub fn run(opts: Opts) -> Result<()> {
     set_env_vars();
 
     let package = parse_package_config(opts.filename)?;
+    let package_id = format!("{}@{}", package.name, package.version);
 
-    println!(
-        "{}",
-        format!(">> installing {}@{}", package.name, package.version).blue()
-    );
+    println!("{}", format!(">> installing {}", package_id).blue());
 
     let dir = TempDir::new()?;
 
@@ -97,6 +96,11 @@ pub fn run(opts: Opts) -> Result<()> {
 
     move_dir(out_dir, pkg_dir.join(package.version), &opts)
         .context("move to destination failed")?;
+
+    let store = Store::new(root.join("$store"));
+    let root = store.root()?;
+
+    store.add(&Transaction::new(root, package_id, Action::Install))?;
 
     println!("{}", ">> installed".blue());
 
