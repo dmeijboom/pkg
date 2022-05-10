@@ -11,6 +11,9 @@ pub enum Instruction {
         source: String,
         target: Option<String>,
     },
+    Publish {
+        target: String
+    }
 }
 
 impl Display for Instruction {
@@ -23,6 +26,7 @@ impl Display for Instruction {
                     write!(f, "PACKAGE '{}'", source)
                 }
             }
+            Instruction::Publish { target } => write!(f, "PUBLISH '{}'", target),
         }
     }
 }

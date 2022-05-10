@@ -25,6 +25,7 @@ impl<'s> Parser<'s> {
 
             match parser.peek_name()? {
                 "PACKAGE" => script.body.push(parser.parse_package()?),
+                "PUBLISH" => script.body.push(parser.parse_publish()?),
                 name => return Err(anyhow!("invalid instruction: {}", name)),
             }
         }
@@ -72,6 +73,15 @@ impl<'s> Parser<'s> {
         self.pos += path.len();
 
         Ok(path)
+    }
+
+    fn parse_publish(&mut self) -> Result<Instruction> {
+        self.pos += "PUBLISH ".len();
+        self.skip_whitespaces();
+
+        let target = self.parse_path()?;
+
+        Ok(Instruction::Publish { target })
     }
 
     fn parse_package(&mut self) -> Result<Instruction> {
