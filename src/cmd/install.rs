@@ -82,7 +82,7 @@ pub fn run(opts: Opts) -> Result<()> {
     println!("{}", ">> packaging".blue());
 
     let root = root_dir();
-    let pkg_dir = root.join(package.name);
+    let pkg_dir = root.join("packages").join(package.name);
 
     if !pkg_dir.exists() {
         fs::create_dir_all(&pkg_dir)?;
@@ -95,7 +95,7 @@ pub fn run(opts: Opts) -> Result<()> {
     move_dir(out_dir, pkg_dir.join(package.version), &opts)
         .context("move to destination failed")?;
 
-    let store = Store::new(root.join("$store"));
+    let store = Store::new(root.join("store"));
     let root = store.root()?;
 
     store.add(&Transaction::new(root, package_id, Action::Install))?;

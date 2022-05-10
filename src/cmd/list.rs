@@ -12,7 +12,7 @@ pub struct Opts {}
 pub fn run(_opts: Opts) -> Result<()> {
     println!("{}", ">> fetching installed packages".blue());
 
-    let store = Store::new(root_dir().join("$store"));
+    let store = Store::new(root_dir().join("store"));
     let mut transactions = vec![];
 
     if let Some(root_hash) = store.root()? {
