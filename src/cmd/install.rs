@@ -25,6 +25,14 @@ pub struct Opts {
 fn set_env_vars() {
     env::set_var("TARGET_OS", env::consts::OS);
     env::set_var("TARGET_ARCH", env::consts::ARCH);
+    env::set_var("TARGET_OS_ALT", env::consts::OS.replace("macos", "darwin"));
+    env::set_var(
+        "TARGET_ARCH_ALT",
+        env::consts::ARCH
+            .replace("aarch64", "arm64")
+            .replace("x86_64", "amd64")
+            .replace("x86", "i386"),
+    );
     env::set_var("TARGET_FAMILY", env::consts::FAMILY);
 }
 
