@@ -13,6 +13,7 @@ use crate::config::Package;
 use crate::download::download;
 use crate::pkgscript::{Instruction, Parser};
 use crate::store::{Action, Store, Transaction};
+use crate::utils::root_dir;
 
 #[derive(ClapParser, Debug)]
 pub struct Opts {
@@ -80,10 +81,7 @@ pub fn run(opts: Opts) -> Result<()> {
 
     println!("{}", ">> packaging".blue());
 
-    let root = PathBuf::from(format!(
-        "{}/.pkg",
-        env::var("HOME").expect("HOME directory not set")
-    ));
+    let root = root_dir();
     let pkg_dir = root.join(package.name);
 
     if !pkg_dir.exists() {

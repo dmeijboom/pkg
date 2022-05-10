@@ -3,12 +3,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use serde_dhall::StaticType;
 
-#[derive(Serialize, Deserialize, StaticType)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, StaticType)]
 pub enum Action {
     Install,
 }
 
-#[derive(Serialize, Deserialize, StaticType)]
+#[derive(Debug, Serialize, Deserialize, StaticType)]
 pub struct Transaction {
     pub before: Option<String>,
     pub created_at: u64,
