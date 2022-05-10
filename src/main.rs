@@ -22,7 +22,7 @@ enum Cmd {
     #[clap(about = "Install a package")]
     Install(install_cmd::Opts),
     #[clap(about = "List all installed packages")]
-    List(list_cmd::Opts),
+    List,
 }
 
 fn main() -> Result<()> {
@@ -30,6 +30,6 @@ fn main() -> Result<()> {
 
     match args.cmd {
         Cmd::Install(opts) => install_cmd::run(opts),
-        Cmd::List(opts) => list_cmd::run(opts),
+        Cmd::List => list_cmd::run(),
     }
 }

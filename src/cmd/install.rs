@@ -1,6 +1,7 @@
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::process::exit;
 use std::{env, fs};
 
 use anyhow::{Context, Result};
@@ -12,12 +13,14 @@ use temp_dir::TempDir;
 use crate::config::Package;
 use crate::download::download;
 use crate::pkgscript::{Instruction, Parser};
-use crate::store::{Action, Store, Transaction};
+use crate::store::{list_installed, Action, Store, Transaction};
 use crate::utils::root_dir;
 
 #[derive(ClapParser, Debug)]
 pub struct Opts {
     filename: PathBuf,
+    #[clap(long)]
+    force: bool,
 }
 
 fn set_env_vars() {
@@ -39,8 +42,20 @@ fn parse_package_config(filename: PathBuf) -> Result<Package> {
 pub fn run(opts: Opts) -> Result<()> {
     set_env_vars();
 
+    let root = root_dir();
+    let store = Store::new(root.join("store"));
+
     let package = parse_package_config(opts.filename)?;
     let package_id = format!("{}@{}", package.name, package.version);
+
+    if !opts.force
+        && list_installed(&store)?
+            .iter()
+            .any(|tx| tx.package_id == package_id)
+    {
+        eprintln!("{}", "package is already installed".red());
+        exit(1);
+    }
 
     println!("{}", format!(">> installing {}", package_id).blue());
 
@@ -81,24 +96,25 @@ pub fn run(opts: Opts) -> Result<()> {
 
     println!("{}", ">> packaging".blue());
 
-    let root = root_dir();
     let pkg_dir = root.join("packages").join(package.name);
 
     if !pkg_dir.exists() {
         fs::create_dir_all(&pkg_dir)?;
     }
 
-    let mut opts = CopyOptions::new();
+    let mut copy_opts = CopyOptions::new();
 
-    opts.content_only = true;
+    copy_opts.overwrite = opts.force;
+    copy_opts.content_only = true;
 
-    move_dir(out_dir, pkg_dir.join(package.version), &opts)
+    move_dir(out_dir, pkg_dir.join(package.version), &copy_opts)
         .context("move to destination failed")?;
 
-    let store = Store::new(root.join("store"));
-    let root = store.root()?;
-
-    store.add(&Transaction::new(root, package_id, Action::Install))?;
+    store.add(&Transaction::new(
+        store.root()?,
+        package_id,
+        Action::Install,
+    ))?;
 
     println!("{}", ">> installed".blue());
 
