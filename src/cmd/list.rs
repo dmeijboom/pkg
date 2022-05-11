@@ -12,7 +12,7 @@ pub fn run() -> Result<()> {
 
     for tx in list_installed(&store)? {
         let time = Utc.timestamp(tx.created_at as i64, 0);
-        let components = tx.package_id.split("@").collect::<Vec<_>>();
+        let components = tx.package_id.split('@').collect::<Vec<_>>();
 
         println!(
             "- {} {}",

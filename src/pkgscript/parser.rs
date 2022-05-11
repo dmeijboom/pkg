@@ -50,7 +50,7 @@ impl<'s> Parser<'s> {
 
     fn peek_name(&mut self) -> Result<&str> {
         let end = self.source[self.pos..]
-            .find(" ")
+            .find(' ')
             .ok_or_else(|| anyhow!("unknown instruction"))?;
 
         Ok(&self.source[self.pos..self.pos + end])
@@ -60,9 +60,9 @@ impl<'s> Parser<'s> {
         self.skip_whitespaces();
 
         let mut path = String::new();
-        let mut chars = self.source[self.pos..].chars();
+        let chars = self.source[self.pos..].chars();
 
-        while let Some(c) = chars.next() {
+        for c in chars {
             match c {
                 '\n' => break,
                 c if c.is_whitespace() => break,
