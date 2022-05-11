@@ -5,6 +5,9 @@ steps:
   - name: build Linux
     image: rust:1-slim-buster
     commands:
+      - >
+        apt-get update && \
+          apt-get install -y pkg-config libssl-dev
       - cargo build --release
       - mkdir -p ${DRONE_COMMIT_SHA:0:7}/x86_64
       - mv target/release/pkg ${DRONE_COMMIT_SHA:0:7}/x86_64/pkg
