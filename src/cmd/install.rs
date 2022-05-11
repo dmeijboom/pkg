@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::{env, fs};
 
 use anyhow::{anyhow, Context, Result};
-use clap::Parser as ClapParser;
+use clap::{Parser as ClapParser, ValueHint};
 use colored::Colorize;
 use fs_extra::dir::{move_dir, CopyOptions};
 use temp_dir::TempDir;
@@ -17,6 +17,7 @@ use crate::utils::root_dir;
 
 #[derive(ClapParser, Debug)]
 pub struct Opts {
+    #[clap(value_hint = ValueHint::FilePath)]
     filename: PathBuf,
     #[clap(long)]
     force: bool,
