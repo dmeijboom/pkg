@@ -10,7 +10,7 @@ use fs_extra::dir::{move_dir, CopyOptions};
 use temp_dir::TempDir;
 
 use crate::config::Package;
-use crate::download::download;
+use crate::download::download_and_unpack;
 use crate::pkgscript::{Instruction, Parser};
 use crate::store::{list_installed, Action, Store, Transaction};
 use crate::utils::root_dir;
@@ -78,7 +78,7 @@ pub fn run(opts: Opts) -> Result<()> {
     for source in package.source.iter() {
         println!("{}", format!("downloading {}", source).white());
 
-        download(source, dir.child("sources"))?;
+        download_and_unpack(source, dir.child("sources"))?;
     }
 
     println!("{}", ">> evaluate pkgscript".blue());

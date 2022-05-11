@@ -3,11 +3,13 @@ use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 use anyhow::{anyhow, Result};
+use flate2::read::GzDecoder;
+use tar::Archive;
 use url::Url;
 
 mod http;
 
-pub fn download(source: impl AsRef<str>, dest: impl AsRef<Path>) -> Result<()> {
+pub fn download_and_unpack(source: impl AsRef<str>, dest: impl AsRef<Path>) -> Result<()> {
     let uri = Url::parse(source.as_ref())?;
     let path = PathBuf::from(uri.path());
     let filename = path
@@ -23,6 +25,15 @@ pub fn download(source: impl AsRef<str>, dest: impl AsRef<Path>) -> Result<()> {
 
     if !dest.as_ref().exists() {
         fs::create_dir_all(dest.as_ref())?;
+    }
+
+    if filename.to_str().unwrap().ends_with(".tar.gz") {
+        let tar = GzDecoder::new(file);
+        let mut archive = Archive::new(tar);
+
+        archive.unpack(dest.as_ref())?;
+
+        return Ok(());
     }
 
     let mut out = File::create(path)?;
