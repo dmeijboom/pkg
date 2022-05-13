@@ -7,10 +7,11 @@ use anyhow::{anyhow, Context, Result};
 use clap::{Parser as ClapParser, ValueHint};
 use colored::Colorize;
 use fs_extra::dir::{move_dir, CopyOptions};
+use serde_dhall::StaticType;
 use temp_dir::TempDir;
 
-use crate::config::Package;
 use crate::download::download_and_unpack;
+use crate::package::{Arch, Package, OS};
 use crate::pkgscript::{Instruction, Parser};
 use crate::store::{list_installed, Action, Store, Transaction};
 use crate::utils::root_dir;
@@ -34,14 +35,6 @@ fn set_env_vars() {
             _ => "unknown",
         },
     );
-    env::set_var("TARGET_OS_ALT", env::consts::OS.replace("macos", "darwin"));
-    env::set_var(
-        "TARGET_ARCH_ALT",
-        env::consts::ARCH
-            .replace("aarch64", "arm64")
-            .replace("x86_64", "amd64")
-            .replace("x86", "i386"),
-    );
     env::set_var("TARGET_FAMILY", env::consts::FAMILY);
 }
 
@@ -49,7 +42,8 @@ fn parse_package_config(filename: PathBuf) -> Result<Package> {
     let content = fs::read_to_string(filename)?;
     let package = serde_dhall::from_str(&content)
         .imports(true)
-        .static_type_annotation()
+        .with_builtin_type("OS".to_string(), OS::static_type())
+        .with_builtin_type("Arch".to_string(), Arch::static_type())
         .parse()?;
 
     Ok(package)
@@ -75,11 +69,26 @@ pub fn run(opts: Opts) -> Result<()> {
     println!("{}", format!(">> installing {}", package_id).blue());
 
     let dir = TempDir::new()?;
+    let sources = package
+        .sources
+        .iter()
+        .filter(|s| s.os == OS::Unknown || s.os.as_ref().to_lowercase() == env::consts::OS)
+        .filter(|s| s.arch == Arch::Unknown || s.arch.as_ref().to_lowercase() == env::consts::ARCH)
+        .collect::<Vec<_>>();
 
-    for source in package.source.iter() {
-        println!("{}", format!("downloading {}", source).white());
+    if sources.is_empty() {
+        return Err(anyhow!(
+            "no sources found for {} (os: {}, arch: {})",
+            package_id,
+            env::consts::OS,
+            env::consts::ARCH
+        ));
+    }
 
-        download_and_unpack(source, dir.child("sources"))?;
+    for source in sources {
+        println!("{}", format!("downloading {}", source.url).white());
+
+        download_and_unpack(&source.url, dir.child("sources"))?;
     }
 
     println!("{}", ">> evaluate pkgscript".blue());
