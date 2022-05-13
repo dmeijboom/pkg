@@ -8,11 +8,10 @@ use clap::{Parser as ClapParser, ValueHint};
 use colored::Colorize;
 use fs_extra::dir::{move_dir, CopyOptions};
 use globset::Glob;
-use serde_dhall::StaticType;
 use temp_dir::TempDir;
 
 use crate::download::download_and_unpack;
-use crate::package::{Arch, Package, OS};
+use crate::package::Package;
 use crate::pkgscript::{Instruction, Parser};
 use crate::store::{list_installed, Action, Store, Transaction};
 use crate::utils::root_dir;
@@ -41,11 +40,7 @@ fn set_env_vars() {
 
 fn parse_package_config(filename: PathBuf) -> Result<Package> {
     let content = fs::read_to_string(filename)?;
-    let package = serde_dhall::from_str(&content)
-        .imports(true)
-        .with_builtin_type("OS".to_string(), OS::static_type())
-        .with_builtin_type("Arch".to_string(), Arch::static_type())
-        .parse()?;
+    let package = serde_dhall::from_str(&content).imports(true).parse()?;
 
     Ok(package)
 }
@@ -87,24 +82,29 @@ pub fn run(opts: Opts) -> Result<()> {
     let dir = TempDir::new()?;
     let sources = package
         .sources
-        .iter()
-        .filter(|s| s.os == OS::Unknown || s.os.as_ref().to_lowercase() == env::consts::OS)
-        .filter(|s| s.arch == Arch::Unknown || s.arch.as_ref().to_lowercase() == env::consts::ARCH)
-        .collect::<Vec<_>>();
-
-    if sources.is_empty() {
-        return Err(anyhow!(
-            "no sources found for {} (os: {}, arch: {})",
-            package_id,
-            env::consts::OS,
-            env::consts::ARCH
-        ));
-    }
+        .get(env::consts::OS)
+        .and_then(|targets| targets.get(env::consts::ARCH))
+        .ok_or_else(|| {
+            anyhow!(
+                "no sources found for target: {}.{}",
+                env::consts::OS,
+                env::consts::ARCH
+            )
+        })?;
 
     for source in sources {
         println!("{}", format!("downloading {}", source.url).white());
 
-        download_and_unpack(&source.url, dir.child("sources"))?;
+        let checksum = download_and_unpack(&source.url, dir.child("sources"))?;
+
+        if source.checksum != checksum {
+            return Err(anyhow!(
+                "checksum mismatch for source '{}' (expected: '{}', got: '{}')",
+                source.url,
+                source.checksum,
+                checksum
+            ));
+        }
     }
 
     println!("{}", ">> evaluate pkgscript".blue());

@@ -42,7 +42,7 @@ impl Store {
 
         if hash != expected {
             return Err(anyhow!(
-                "hash mismatch (expected: '{}', got: '{}')",
+                "checksum mismatch (expected: '{}', got: '{}')",
                 expected,
                 hash
             ));
