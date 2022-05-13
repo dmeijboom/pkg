@@ -32,7 +32,6 @@ pub enum Arch {
     x86,
     x86_64,
     arm,
-    arm64,
     aarch64,
     m68k,
     mips,
