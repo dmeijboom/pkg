@@ -6,8 +6,9 @@ use cmd::install as install_cmd;
 use cmd::list as list_cmd;
 
 mod cmd;
-mod package;
 mod download;
+mod installer;
+mod package;
 mod pkgscript;
 mod store;
 mod utils;
