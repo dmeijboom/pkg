@@ -3,6 +3,7 @@ use serde_dhall::StaticType;
 use strum_macros::AsRefStr;
 
 #[allow(non_camel_case_types)]
+#[allow(clippy::enum_variant_names)]
 #[derive(Deserialize, Debug, PartialEq, AsRefStr, StaticType)]
 pub enum OS {
     Unknown,

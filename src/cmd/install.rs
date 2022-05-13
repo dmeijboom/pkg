@@ -1,12 +1,13 @@
 use std::fs::Permissions;
 use std::os::unix::fs::{symlink, PermissionsExt};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser as ClapParser, ValueHint};
 use colored::Colorize;
 use fs_extra::dir::{move_dir, CopyOptions};
+use globset::Glob;
 use serde_dhall::StaticType;
 use temp_dir::TempDir;
 
@@ -47,6 +48,21 @@ fn parse_package_config(filename: PathBuf) -> Result<Package> {
         .parse()?;
 
     Ok(package)
+}
+
+fn find_file(dir: impl AsRef<Path>, pat: Glob) -> Result<PathBuf> {
+    let matcher = pat.compile_matcher();
+    let read_dir = dir.as_ref().read_dir()?;
+
+    for entry in read_dir {
+        let entry = entry?;
+
+        if matcher.is_match(entry.path()) {
+            return Ok(entry.path());
+        }
+    }
+
+    Err(anyhow!("no such file found for pattern: {}", pat))
 }
 
 pub fn run(opts: Opts) -> Result<()> {
@@ -107,7 +123,15 @@ pub fn run(opts: Opts) -> Result<()> {
 
         match instruction {
             Instruction::Package { source, target } => {
-                let source = dir.child(source);
+                let source = if let Some(idx) = source.find('*') {
+                    let pattern = format!("{}/{}", dir.path().to_str().unwrap(), source);
+                    let glob = Glob::new(&pattern)?;
+                    let prefix = dir.child(&source[..idx]);
+
+                    find_file(prefix.parent().unwrap(), glob)?
+                } else {
+                    dir.child(source)
+                };
                 let dest = match target {
                     Some(target) => out_bin_dir.join(target),
                     None => out_bin_dir.join(source.file_name().unwrap()),
