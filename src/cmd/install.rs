@@ -5,7 +5,8 @@ use anyhow::{anyhow, Result};
 use clap::{Parser as ClapParser, ValueHint};
 use colored::Colorize;
 
-use crate::installer::{InstallOpts, Installer, Stage};
+use crate::install::channel::Receiver;
+use crate::install::{self, Event, Installer, Stage};
 use crate::store::{list_installed, Action, Store, Transaction};
 use crate::utils::{parse_package_config, root_dir};
 
@@ -19,10 +20,9 @@ pub struct Opts {
     no_publish: bool,
 }
 
-pub fn run(opts: Opts) -> Result<()> {
+pub async fn run(opts: Opts) -> Result<()> {
     let root = root_dir();
     let store = Store::new(root.join("store"));
-
     let package = parse_package_config(opts.filename)?;
     let package_id = format!("{}@{}", package.name, package.version);
 
@@ -36,11 +36,11 @@ pub fn run(opts: Opts) -> Result<()> {
 
     println!("{}", format!(">> installing {}", package_id).blue());
 
-    let installer = Installer::new(&package);
+    let (installer, rx) = Installer::new(&package, root)?;
+    let progress = tokio::spawn(async move { show_progress(rx).await });
 
-    installer.install(
-        root,
-        InstallOpts {
+    installer
+        .install(install::Opts {
             os: env::consts::OS,
             arch: env::consts::ARCH,
             force: opts.force,
@@ -49,8 +49,10 @@ pub fn run(opts: Opts) -> Result<()> {
             } else {
                 Stage::Publish
             },
-        },
-    )?;
+        })
+        .await?;
+
+    progress.await?;
 
     store.add(&Transaction::new(
         store.root()?,
@@ -61,4 +63,30 @@ pub fn run(opts: Opts) -> Result<()> {
     println!("{}", ">> installed".blue());
 
     Ok(())
+}
+
+async fn show_progress(mut rx: Receiver) {
+    while let Some(event) = rx.recv().await {
+        match event {
+            Event::EnterStage(stage) => {
+                println!(
+                    "{}",
+                    format!(
+                        ">> {}",
+                        match stage {
+                            Stage::FetchSources => "fetching sources",
+                            Stage::EvalPkgscript => "evaluating pkgscript",
+                            Stage::Package => "packaging",
+                            Stage::Publish => "publishing",
+                        }
+                    )
+                    .blue()
+                );
+            }
+            Event::ExitStage(_) => {}
+            Event::Message(_, msg) => {
+                println!("{}", msg.white());
+            }
+        }
+    }
 }

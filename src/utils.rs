@@ -10,6 +10,7 @@ pub fn root_dir() -> PathBuf {
         env::var("HOME").expect("HOME directory not set")
     ))
 }
+
 pub fn parse_package_config(filename: PathBuf) -> Result<Package> {
     let content = fs::read_to_string(filename)?;
     let package = serde_dhall::from_str(&content).imports(true).parse()?;

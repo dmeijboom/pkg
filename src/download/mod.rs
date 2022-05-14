@@ -1,34 +1,58 @@
-use std::fs::File;
-use std::io::Read;
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::{fs, io};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use anyhow::{anyhow, Result};
-use flate2::read::GzDecoder;
+use async_compression::tokio::bufread::GzipDecoder;
+use sha2::digest::Update;
 use sha2::{Digest, Sha256};
-use tar::Archive;
+use tokio::fs::File;
+use tokio::io;
+use tokio::io::{AsyncBufRead, AsyncRead, ReadBuf};
+use tokio_tar::Archive;
 use url::Url;
 
 mod http;
 
-pub struct ChecksumReader<R: Read> {
+pub struct ChecksumReader<R: AsyncBufRead + Send + Sync + Unpin> {
     reader: R,
     hasher: Sha256,
 }
 
-impl<R: Read> Read for ChecksumReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let n = self.reader.read(buf)?;
+impl<R: AsyncBufRead + Send + Sync + Unpin> AsyncRead for ChecksumReader<R> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let checksum_reader = Pin::into_inner(self);
 
-        if n > 0 {
-            self.hasher.update(&buf[..n]);
+        match Pin::new(&mut checksum_reader.reader).poll_read(cx, buf) {
+            Poll::Ready(Ok(())) => {
+                Update::update(&mut checksum_reader.hasher, buf.filled());
+
+                Poll::Ready(Ok(()))
+            }
+            poll => poll,
         }
-
-        Ok(n)
     }
 }
 
-impl<R: Read> ChecksumReader<R> {
+impl<R: AsyncBufRead + Send + Sync + Unpin> AsyncBufRead for ChecksumReader<R> {
+    fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
+        let checksum_reader = Pin::into_inner(self);
+
+        Pin::new(&mut checksum_reader.reader).poll_fill_buf(cx)
+    }
+
+    fn consume(self: Pin<&mut Self>, amt: usize) {
+        let checksum_reader = Pin::into_inner(self);
+
+        Pin::new(&mut checksum_reader.reader).consume(amt)
+    }
+}
+impl<R: AsyncBufRead + Send + Sync + Unpin> ChecksumReader<R> {
     pub fn new(reader: R) -> Self {
         Self {
             reader,
@@ -43,17 +67,17 @@ impl<R: Read> ChecksumReader<R> {
     }
 }
 
-pub fn download_and_unpack(source: &str, dest: impl AsRef<Path>) -> Result<String> {
+pub async fn download_and_unpack(source: &str, dest: impl AsRef<Path>) -> Result<String> {
     let uri = Url::parse(source)?;
     let path = PathBuf::from(uri.path());
     let filename = path
         .file_name()
         .ok_or_else(|| anyhow!("filename missing"))?;
     let file = match uri.scheme() {
-        "https" => http::download(uri),
-        "http" => Err(anyhow!("'http' scheme is unsafe and unsupported")),
-        _ => Err(anyhow!("unsupported scheme '{}'", uri.scheme())),
-    }?;
+        "https" => http::download(uri).await?,
+        "http" => return Err(anyhow!("'http' scheme is unsafe and unsupported")),
+        _ => return Err(anyhow!("unsupported scheme '{}'", uri.scheme())),
+    };
     let mut file = ChecksumReader::new(file);
 
     if !dest.as_ref().exists() {
@@ -61,18 +85,22 @@ pub fn download_and_unpack(source: &str, dest: impl AsRef<Path>) -> Result<Strin
     }
 
     if filename.to_str().unwrap().ends_with(".tar.gz") {
-        let tar = GzDecoder::new(file);
+        let tar = GzipDecoder::new(file);
         let mut archive = Archive::new(tar);
 
-        archive.unpack(dest.as_ref())?;
+        archive.unpack(dest.as_ref()).await?;
 
-        return archive.into_inner().into_inner().compute();
+        return archive
+            .into_inner()
+            .map_err(|_| anyhow!("unable to unwrap inner reader"))?
+            .into_inner()
+            .compute();
     }
 
     let dest_path = PathBuf::from(dest.as_ref()).join(filename);
-    let mut out = File::create(dest_path)?;
+    let mut out = File::create(dest_path).await?;
 
-    io::copy(&mut file, &mut out)?;
+    io::copy(&mut file, &mut out).await?;
 
     file.compute()
 }

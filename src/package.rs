@@ -25,20 +25,18 @@ macro_rules! impl_target {
                 }
             }
 
-            pub fn keys(&self) -> &[&str] {
-                &[$(stringify!($name),)+]
+            pub fn valid_keys(&self) -> Vec<&str> {
+                let mut keys = vec![];
+
+                $(if !self.$name.is_empty() {
+                    keys.push(stringify!($name));
+                })+
+
+                keys
             }
 
             pub fn is_empty(&self) -> bool {
-                for key in self.keys() {
-                    if let Some(sources) = self.get(key) {
-                        if !sources.is_empty() {
-                            return false;
-                        }
-                    }
-                }
-
-                true
+                self.valid_keys().is_empty()
             }
         }
     };

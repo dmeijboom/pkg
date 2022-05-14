@@ -3,17 +3,19 @@ use std::fs::Permissions;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-use crate::package::Package;
-
-use crate::download::download_and_unpack;
-use crate::pkgscript::{Instruction, Parser};
-use anyhow::{anyhow, Context, Result};
-use colored::Colorize;
+use anyhow::{anyhow, Context as _, Result};
 use fs_extra::dir::{move_dir, CopyOptions};
 use globset::Glob;
 use temp_dir::TempDir;
+use tokio::sync::mpsc::channel;
 
-#[derive(PartialEq)]
+use crate::download::download_and_unpack;
+use crate::install::channel::{Receiver, Sender};
+use crate::install::{Event, MessageType};
+use crate::package::Package;
+use crate::pkgscript::{Instruction, Parser};
+
+#[derive(Debug, PartialEq)]
 pub enum Stage {
     FetchSources,
     EvalPkgscript,
@@ -21,31 +23,11 @@ pub enum Stage {
     Publish,
 }
 
-pub struct InstallOpts<'o> {
+pub struct Opts<'o> {
     pub os: &'o str,
     pub arch: &'o str,
     pub force: bool,
     pub stage: Stage,
-}
-
-pub struct InstallCtx {
-    sources_dir: PathBuf,
-    packages_dir: PathBuf,
-    bin_dir: PathBuf,
-    tmp_dir: TempDir,
-    output_dir: PathBuf,
-}
-
-impl InstallCtx {
-    pub fn new(root_dir: PathBuf, tmp_dir: TempDir) -> Self {
-        Self {
-            packages_dir: root_dir.join("packages"),
-            bin_dir: root_dir.join("bin"),
-            sources_dir: tmp_dir.child("sources"),
-            output_dir: tmp_dir.child("output"),
-            tmp_dir,
-        }
-    }
 }
 
 fn find_file(dir: impl AsRef<Path>, pat: Glob) -> Result<PathBuf> {
@@ -63,16 +45,42 @@ fn find_file(dir: impl AsRef<Path>, pat: Glob) -> Result<PathBuf> {
     Err(anyhow!("no such file found for pattern: {}", pat))
 }
 
+struct Dirs {
+    sources: PathBuf,
+    packages: PathBuf,
+    bin: PathBuf,
+    tmp: TempDir,
+    output: PathBuf,
+}
+
 pub struct Installer<'i> {
     pkg: &'i Package,
+    dirs: Dirs,
+    tx: Sender,
 }
 
 impl<'i> Installer<'i> {
-    pub fn new(pkg: &'i Package) -> Self {
-        Installer { pkg }
+    pub fn new(pkg: &'i Package, root: PathBuf) -> Result<(Self, Receiver)> {
+        let (tx, rx) = channel(10);
+        let tmp = TempDir::new()?;
+
+        Ok((
+            Installer {
+                pkg,
+                tx,
+                dirs: Dirs {
+                    packages: root.join("packages"),
+                    bin: root.join("bin"),
+                    sources: tmp.child("sources"),
+                    output: tmp.child("output"),
+                    tmp,
+                },
+            },
+            rx,
+        ))
     }
 
-    fn fetch_sources(&self, ctx: &InstallCtx, os: &str, arch: &str) -> Result<()> {
+    async fn fetch_sources(&self, os: &str, arch: &str) -> Result<()> {
         let sources = self
             .pkg
             .sources
@@ -81,9 +89,14 @@ impl<'i> Installer<'i> {
             .ok_or_else(|| anyhow!("no sources found for target: {}.{}", os, arch))?;
 
         for source in sources {
-            println!("{}", format!("downloading {}", source.url).white());
+            self.tx
+                .send(Event::Message(
+                    MessageType::Info,
+                    format!("downloading {}", source.url),
+                ))
+                .await?;
 
-            let checksum = download_and_unpack(&source.url, &ctx.sources_dir)?;
+            let checksum = download_and_unpack(&source.url, &self.dirs.sources).await?;
 
             if source.checksum != checksum {
                 return Err(anyhow!(
@@ -98,10 +111,8 @@ impl<'i> Installer<'i> {
         Ok(())
     }
 
-    fn eval_pkgscript(&self, ctx: &InstallCtx) -> Result<Vec<String>> {
-        println!("{}", ">> evaluate pkgscript".blue());
-
-        let out_bin_dir = ctx.output_dir.join("bin");
+    async fn eval_pkgscript(&self) -> Result<Vec<String>> {
+        let out_bin_dir = self.dirs.output.join("bin");
 
         fs::create_dir_all(&out_bin_dir)?;
 
@@ -109,19 +120,21 @@ impl<'i> Installer<'i> {
         let mut published = vec![];
 
         for instruction in script.body {
-            println!("{}", instruction.to_string().white());
+            self.tx
+                .send(Event::Message(MessageType::Info, instruction.to_string()))
+                .await?;
 
             match instruction {
                 Instruction::Package { source, target } => {
                     let source = if let Some(idx) = source.find('*') {
                         let pattern =
-                            format!("{}/{}", ctx.tmp_dir.path().to_str().unwrap(), source);
+                            format!("{}/{}", self.dirs.tmp.path().to_str().unwrap(), source);
                         let glob = Glob::new(&pattern)?;
-                        let prefix = ctx.tmp_dir.child(&source[..idx]);
+                        let prefix = self.dirs.tmp.child(&source[..idx]);
 
                         find_file(prefix.parent().unwrap(), glob)?
                     } else {
-                        ctx.tmp_dir.child(source)
+                        self.dirs.tmp.child(source)
                     };
                     let dest = match target {
                         Some(target) => out_bin_dir.join(target),
@@ -150,10 +163,8 @@ impl<'i> Installer<'i> {
         Ok(published)
     }
 
-    fn package(&self, ctx: &InstallCtx, force: bool) -> Result<()> {
-        println!("{}", ">> packaging".blue());
-
-        let packages_dir = ctx.packages_dir.join(&self.pkg.name);
+    async fn package(&self, force: bool) -> Result<()> {
+        let packages_dir = self.dirs.packages.join(&self.pkg.name);
 
         if !packages_dir.exists() {
             fs::create_dir_all(&packages_dir)?;
@@ -166,42 +177,51 @@ impl<'i> Installer<'i> {
 
         let pkg_dir = packages_dir.join(&self.pkg.version);
 
-        move_dir(&ctx.output_dir, &pkg_dir, &copy_opts).context("move to destination failed")?;
+        move_dir(&self.dirs.output, &pkg_dir, &copy_opts).context("move to destination failed")?;
 
         Ok(())
     }
 
-    fn publish(&self, ctx: &InstallCtx, published: Vec<String>) -> Result<()> {
-        if !ctx.bin_dir.exists() {
-            fs::create_dir_all(&ctx.bin_dir)?;
+    async fn publish(&self, published: Vec<String>) -> Result<()> {
+        if !self.dirs.bin.exists() {
+            fs::create_dir_all(&self.dirs.bin)?;
         }
 
-        let pkg_bin_dir = ctx
-            .packages_dir
+        let pkg_bin_dir = self
+            .dirs
+            .packages
             .join(&self.pkg.name)
             .join(&self.pkg.version)
             .join("bin");
 
         for target in published {
-            symlink(pkg_bin_dir.join(&target), ctx.bin_dir.join(target))?;
+            symlink(pkg_bin_dir.join(&target), self.dirs.bin.join(target))?;
         }
 
         Ok(())
     }
 
-    pub fn install(self, root_dir: PathBuf, opts: InstallOpts<'_>) -> Result<()> {
-        let ctx = InstallCtx::new(root_dir, TempDir::new()?);
-
-        self.fetch_sources(&ctx, opts.os, opts.arch)?;
+    pub async fn install(self, opts: Opts<'_>) -> Result<()> {
+        self.tx.send(Event::EnterStage(Stage::FetchSources)).await?;
+        self.fetch_sources(opts.os, opts.arch).await?;
+        self.tx.send(Event::ExitStage(Stage::FetchSources)).await?;
 
         if opts.stage != Stage::FetchSources {
-            let published = self.eval_pkgscript(&ctx)?;
+            self.tx
+                .send(Event::EnterStage(Stage::EvalPkgscript))
+                .await?;
+            let published = self.eval_pkgscript().await?;
+            self.tx.send(Event::ExitStage(Stage::EvalPkgscript)).await?;
 
             if opts.stage != Stage::EvalPkgscript {
-                self.package(&ctx, opts.force)?;
+                self.tx.send(Event::EnterStage(Stage::Package)).await?;
+                self.package(opts.force).await?;
+                self.tx.send(Event::ExitStage(Stage::Package)).await?;
 
                 if opts.stage != Stage::Package {
-                    self.publish(&ctx, published)?;
+                    self.tx.send(Event::EnterStage(Stage::Publish)).await?;
+                    self.publish(published).await?;
+                    self.tx.send(Event::ExitStage(Stage::Publish)).await?;
                 }
             }
         }

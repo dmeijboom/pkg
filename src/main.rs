@@ -5,7 +5,7 @@ use cmd::{check as check_cmd, complete as complete_cmd, install as install_cmd, 
 
 mod cmd;
 mod download;
-mod installer;
+mod install;
 mod package;
 mod pkgscript;
 mod store;
@@ -29,13 +29,14 @@ enum Cmd {
     Complete(complete_cmd::Opts),
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let args = Args::parse();
 
     match args.cmd {
-        Cmd::Install(opts) => install_cmd::run(opts),
+        Cmd::Install(opts) => install_cmd::run(opts).await,
         Cmd::List => list_cmd::run(),
-        Cmd::Check(opts) => check_cmd::run(opts),
+        Cmd::Check(opts) => check_cmd::run(opts).await,
         Cmd::Complete(opts) => complete_cmd::run(opts),
     }
 }
