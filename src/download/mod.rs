@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use anyhow::{anyhow, Result};
-use async_compression::tokio::bufread::GzipDecoder;
+use async_compression::tokio::bufread::{GzipDecoder, XzDecoder};
 use sha2::digest::Update;
 use sha2::{Digest, Sha256};
 use tokio::fs::File;
@@ -14,6 +14,16 @@ use tokio_tar::Archive;
 use url::Url;
 
 mod http;
+
+macro_rules! unwrap_archive {
+    ($archive:expr) => {
+        $archive
+            .into_inner()
+            .map_err(|_| anyhow!("unable to unwrap inner reader"))?
+            .into_inner()
+            .compute()
+    };
+}
 
 pub struct ChecksumReader<R: AsyncBufRead + Send + Sync + Unpin> {
     reader: R,
@@ -84,23 +94,29 @@ pub async fn download_and_unpack(source: &str, dest: impl AsRef<Path>) -> Result
         fs::create_dir_all(dest.as_ref())?;
     }
 
-    if filename.to_str().unwrap().ends_with(".tar.gz") {
-        let tar = GzipDecoder::new(file);
-        let mut archive = Archive::new(tar);
+    let filename = PathBuf::from(filename);
+    let ext = filename.extension().and_then(|f| f.to_str());
 
-        archive.unpack(dest.as_ref()).await?;
+    match ext {
+        Some("tar.gz") => {
+            let mut archive = Archive::new(GzipDecoder::new(file));
+            archive.unpack(dest.as_ref()).await?;
 
-        return archive
-            .into_inner()
-            .map_err(|_| anyhow!("unable to unwrap inner reader"))?
-            .into_inner()
-            .compute();
+            unwrap_archive!(archive)
+        }
+        Some("tar.xz") => {
+            let mut archive = Archive::new(XzDecoder::new(file));
+            archive.unpack(dest.as_ref()).await?;
+
+            unwrap_archive!(archive)
+        }
+        _ => {
+            let dest_path = PathBuf::from(dest.as_ref()).join(filename);
+            let mut out = File::create(dest_path).await?;
+
+            io::copy(&mut file, &mut out).await?;
+
+            file.compute()
+        }
     }
-
-    let dest_path = PathBuf::from(dest.as_ref()).join(filename);
-    let mut out = File::create(dest_path).await?;
-
-    io::copy(&mut file, &mut out).await?;
-
-    file.compute()
 }
