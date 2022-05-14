@@ -1,13 +1,13 @@
+use std::env;
+use std::path::PathBuf;
+
 use anyhow::{anyhow, Result};
 use clap::{Parser as ClapParser, ValueHint};
 use colored::Colorize;
-use std::fs;
-use std::path::PathBuf;
 
-use crate::installer::{InstallOpts, Installer};
-use crate::package::Package;
+use crate::installer::{InstallOpts, Installer, Stage};
 use crate::store::{list_installed, Action, Store, Transaction};
-use crate::utils::root_dir;
+use crate::utils::{parse_package_config, root_dir};
 
 #[derive(ClapParser, Debug)]
 pub struct Opts {
@@ -17,13 +17,6 @@ pub struct Opts {
     force: bool,
     #[clap(long)]
     no_publish: bool,
-}
-
-fn parse_package_config(filename: PathBuf) -> Result<Package> {
-    let content = fs::read_to_string(filename)?;
-    let package = serde_dhall::from_str(&content).imports(true).parse()?;
-
-    Ok(package)
 }
 
 pub fn run(opts: Opts) -> Result<()> {
@@ -43,13 +36,19 @@ pub fn run(opts: Opts) -> Result<()> {
 
     println!("{}", format!(">> installing {}", package_id).blue());
 
-    let installer = Installer::new(package);
+    let installer = Installer::new(&package);
 
     installer.install(
         root,
         InstallOpts {
+            os: env::consts::OS,
+            arch: env::consts::ARCH,
             force: opts.force,
-            publish: !opts.no_publish,
+            stage: if opts.no_publish {
+                Stage::Package
+            } else {
+                Stage::Publish
+            },
         },
     )?;
 

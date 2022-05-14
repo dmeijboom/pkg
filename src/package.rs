@@ -24,6 +24,22 @@ macro_rules! impl_target {
                     _ => None,
                 }
             }
+
+            pub fn keys(&self) -> &[&str] {
+                &[$(stringify!($name),)+]
+            }
+
+            pub fn is_empty(&self) -> bool {
+                for key in self.keys() {
+                    if let Some(sources) = self.get(key) {
+                        if !sources.is_empty() {
+                            return false;
+                        }
+                    }
+                }
+
+                true
+            }
         }
     };
 }
@@ -44,9 +60,14 @@ macro_rules! impl_sources {
         impl Sources {
             pub fn get(&self, name: &str) -> Option<&Targets> {
                 match name {
-                    $(stringify!($name) => Some(&self.$name),)+
+                    $(stringify!($name) if self.$name.is_empty() => None,
+                    stringify!($name) => Some(&self.$name),)+
                     _ => None,
                 }
+            }
+
+            pub fn keys(&self) -> &[&str] {
+                &[$(stringify!($name),)+]
             }
         }
     };

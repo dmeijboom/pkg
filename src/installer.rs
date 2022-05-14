@@ -1,7 +1,7 @@
+use std::fs;
 use std::fs::Permissions;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::{env, fs};
 
 use crate::package::Package;
 
@@ -13,12 +13,22 @@ use fs_extra::dir::{move_dir, CopyOptions};
 use globset::Glob;
 use temp_dir::TempDir;
 
-pub struct InstallOpts {
-    pub force: bool,
-    pub publish: bool,
+#[derive(PartialEq)]
+pub enum Stage {
+    FetchSources,
+    EvalPkgscript,
+    Package,
+    Publish,
 }
 
-struct InstallCtx {
+pub struct InstallOpts<'o> {
+    pub os: &'o str,
+    pub arch: &'o str,
+    pub force: bool,
+    pub stage: Stage,
+}
+
+pub struct InstallCtx {
     sources_dir: PathBuf,
     packages_dir: PathBuf,
     bin_dir: PathBuf,
@@ -53,42 +63,22 @@ fn find_file(dir: impl AsRef<Path>, pat: Glob) -> Result<PathBuf> {
     Err(anyhow!("no such file found for pattern: {}", pat))
 }
 
-fn set_env_vars() {
-    env::set_var("TARGET_OS", env::consts::OS);
-    env::set_var("TARGET_ARCH", env::consts::ARCH);
-    env::set_var(
-        "TARGET_VENDOR",
-        match env::consts::OS {
-            "macos" => "apple",
-            "windows" => "pc",
-            _ => "unknown",
-        },
-    );
-    env::set_var("TARGET_FAMILY", env::consts::FAMILY);
+pub struct Installer<'i> {
+    pkg: &'i Package,
 }
 
-pub struct Installer {
-    pkg: Package,
-}
-
-impl Installer {
-    pub fn new(pkg: Package) -> Self {
+impl<'i> Installer<'i> {
+    pub fn new(pkg: &'i Package) -> Self {
         Installer { pkg }
     }
 
-    fn fetch_sources(&self, ctx: &InstallCtx) -> Result<()> {
+    fn fetch_sources(&self, ctx: &InstallCtx, os: &str, arch: &str) -> Result<()> {
         let sources = self
             .pkg
             .sources
-            .get(env::consts::OS)
-            .and_then(|targets| targets.get(env::consts::ARCH))
-            .ok_or_else(|| {
-                anyhow!(
-                    "no sources found for target: {}.{}",
-                    env::consts::OS,
-                    env::consts::ARCH
-                )
-            })?;
+            .get(os)
+            .and_then(|targets| targets.get(arch))
+            .ok_or_else(|| anyhow!("no sources found for target: {}.{}", os, arch))?;
 
         for source in sources {
             println!("{}", format!("downloading {}", source.url).white());
@@ -199,17 +189,21 @@ impl Installer {
         Ok(())
     }
 
-    pub fn install(self, root_dir: PathBuf, opts: InstallOpts) -> Result<()> {
+    pub fn install(self, root_dir: PathBuf, opts: InstallOpts<'_>) -> Result<()> {
         let ctx = InstallCtx::new(root_dir, TempDir::new()?);
 
-        set_env_vars();
+        self.fetch_sources(&ctx, opts.os, opts.arch)?;
 
-        self.fetch_sources(&ctx)?;
-        let published = self.eval_pkgscript(&ctx)?;
-        self.package(&ctx, opts.force)?;
+        if opts.stage != Stage::FetchSources {
+            let published = self.eval_pkgscript(&ctx)?;
 
-        if opts.publish {
-            self.publish(&ctx, published)?;
+            if opts.stage != Stage::EvalPkgscript {
+                self.package(&ctx, opts.force)?;
+
+                if opts.stage != Stage::Package {
+                    self.publish(&ctx, published)?;
+                }
+            }
         }
 
         Ok(())
