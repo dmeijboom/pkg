@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use anyhow::{anyhow, Result};
 use clap::{Parser as ClapParser, ValueHint};
 use colored::Colorize;
+use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::install::channel::Receiver;
 use crate::install::{self, Event, Installer, Stage};
@@ -36,8 +37,9 @@ pub async fn run(opts: Opts) -> Result<()> {
 
     println!("{}", format!(">> installing {}", package_id).blue());
 
+    let total_stages = if opts.no_publish { 3 } else { 4 };
     let (installer, rx) = Installer::new(&package, root)?;
-    let progress = tokio::spawn(async move { show_progress(rx).await });
+    let progress = tokio::spawn(async move { show_progress(total_stages, rx).await });
 
     installer
         .install(install::Opts {
@@ -65,12 +67,17 @@ pub async fn run(opts: Opts) -> Result<()> {
     Ok(())
 }
 
-async fn show_progress(mut rx: Receiver) {
+async fn show_progress(total_stages: usize, mut rx: Receiver) {
+    let style = ProgressStyle::default_bar()
+        .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
+        .unwrap()
+        .progress_chars("##-");
+    let pb = ProgressBar::new(total_stages as u64).with_style(style);
+
     while let Some(event) = rx.recv().await {
         match event {
             Event::EnterStage(stage) => {
-                println!(
-                    "{}",
+                pb.println(
                     format!(
                         ">> {}",
                         match stage {
@@ -81,12 +88,19 @@ async fn show_progress(mut rx: Receiver) {
                         }
                     )
                     .blue()
+                    .to_string(),
                 );
             }
-            Event::ExitStage(_) => {}
+            Event::ExitStage(_) => {
+                pb.inc(1);
+            }
             Event::Message(_, msg) => {
-                println!("{}", msg.white());
+                pb.println(msg.white().to_string());
             }
         }
+
+        pb.tick();
     }
+
+    pb.finish_and_clear();
 }
