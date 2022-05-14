@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 use std::{env, fs};
 
+use anyhow::{anyhow, Result};
+
 use crate::package::Package;
-use anyhow::Result;
 
 pub fn root_dir() -> PathBuf {
     PathBuf::from(format!(
@@ -16,4 +17,14 @@ pub fn parse_package_config(filename: PathBuf) -> Result<Package> {
     let package = serde_dhall::from_str(&content).imports(true).parse()?;
 
     Ok(package)
+}
+
+pub fn parse_id(id: &str) -> Result<(&str, &str)> {
+    let components = id.split('@').collect::<Vec<_>>();
+
+    if components.len() != 2 {
+        return Err(anyhow!("invalid package id format"));
+    }
+
+    Ok((components[0], components[1]))
 }

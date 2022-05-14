@@ -1,6 +1,7 @@
 mod store;
 mod transaction;
 
+use std::collections::HashMap;
 pub use store::Store;
 pub use transaction::{Action, Transaction};
 
@@ -20,9 +21,26 @@ pub fn list_installed(store: &Store) -> Result<Vec<Transaction>> {
         }
     }
 
-    Ok(transactions
-        .into_iter()
-        .filter(|tx| tx.action == Action::Install)
-        .rev()
-        .collect())
+    let mut index_map = HashMap::new();
+    let mut installed = vec![];
+
+    for tx in transactions.into_iter().rev() {
+        match tx.action {
+            Action::Install => {
+                if index_map.contains_key(&tx.package_id) {
+                    continue;
+                }
+
+                index_map.insert(tx.package_id.clone(), installed.len());
+                installed.push(tx);
+            }
+            Action::Remove => {
+                if let Some(index) = index_map.remove(&tx.package_id) {
+                    installed.remove(index);
+                }
+            }
+        };
+    }
+
+    Ok(installed)
 }

@@ -3,7 +3,7 @@ use chrono::{TimeZone, Utc};
 use colored::Colorize;
 
 use crate::store::{list_installed, Store};
-use crate::utils::root_dir;
+use crate::utils::{parse_id, root_dir};
 
 pub fn run() -> Result<()> {
     println!("{}", ">> fetching installed packages".blue());
@@ -12,14 +12,14 @@ pub fn run() -> Result<()> {
 
     for tx in list_installed(&store)? {
         let time = Utc.timestamp(tx.created_at as i64, 0);
-        let components = tx.package_id.split('@').collect::<Vec<_>>();
+        let (name, version) = parse_id(&tx.package_id)?;
 
         println!(
             "- {} {}",
-            components[0].green(),
+            name.green(),
             format!(
                 "(version {} at {})",
-                components[1].bold(),
+                version.bold(),
                 time.to_rfc3339().bold()
             )
             .white()

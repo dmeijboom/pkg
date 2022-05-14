@@ -6,6 +6,7 @@ use serde_dhall::StaticType;
 #[derive(Debug, Serialize, Deserialize, PartialEq, StaticType)]
 pub enum Action {
     Install,
+    Remove,
 }
 
 #[derive(Debug, Serialize, Deserialize, StaticType)]
