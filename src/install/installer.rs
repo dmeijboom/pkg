@@ -1,12 +1,13 @@
-use std::fs;
 use std::fs::Permissions;
-use std::os::unix::fs::{symlink, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context as _, Result};
 use fs_extra::dir::{move_dir, CopyOptions};
 use globset::Glob;
 use temp_dir::TempDir;
+use tokio::fs;
+use tokio::fs::symlink;
 use tokio::sync::mpsc::channel;
 
 use crate::download::download_and_unpack;
@@ -114,7 +115,7 @@ impl<'i> Installer<'i> {
     async fn eval_pkgscript(&self) -> Result<Vec<String>> {
         let out_bin_dir = self.dirs.output.join("bin");
 
-        fs::create_dir_all(&out_bin_dir)?;
+        fs::create_dir_all(&out_bin_dir).await?;
 
         let script = Parser::parse(&self.pkg.install)?;
         let mut published = vec![];
@@ -141,8 +142,8 @@ impl<'i> Installer<'i> {
                         None => out_bin_dir.join(source.file_name().unwrap()),
                     };
 
-                    fs::copy(&source, &dest).context("copy failed")?;
-                    fs::set_permissions(dest, Permissions::from_mode(0o755))?;
+                    fs::copy(&source, &dest).await.context("copy failed")?;
+                    fs::set_permissions(dest, Permissions::from_mode(0o755)).await?;
                 }
                 Instruction::Publish { target } => {
                     let dest = out_bin_dir.join(&target);
@@ -167,7 +168,7 @@ impl<'i> Installer<'i> {
         let packages_dir = self.dirs.packages.join(&self.pkg.name);
 
         if !packages_dir.exists() {
-            fs::create_dir_all(&packages_dir)?;
+            fs::create_dir_all(&packages_dir).await?;
         }
 
         let mut copy_opts = CopyOptions::new();
@@ -184,7 +185,7 @@ impl<'i> Installer<'i> {
 
     async fn publish(&self, published: Vec<String>) -> Result<()> {
         if !self.dirs.bin.exists() {
-            fs::create_dir_all(&self.dirs.bin)?;
+            fs::create_dir_all(&self.dirs.bin).await?;
         }
 
         let pkg_bin_dir = self
@@ -195,7 +196,13 @@ impl<'i> Installer<'i> {
             .join("bin");
 
         for target in published {
-            symlink(pkg_bin_dir.join(&target), self.dirs.bin.join(target))?;
+            let link = self.dirs.bin.join(target);
+
+            if link.exists() {
+                fs::remove_file(&link).await?;
+            }
+
+            symlink(pkg_bin_dir.join(&link), link).await?;
         }
 
         Ok(())
