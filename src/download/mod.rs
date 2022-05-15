@@ -25,6 +25,24 @@ macro_rules! unwrap_archive {
     };
 }
 
+#[derive(Debug, PartialEq)]
+enum CompressionFormat {
+    TarGz,
+    TarXz,
+}
+
+fn parse_compression_format(filename: &str) -> Option<CompressionFormat> {
+    if filename.ends_with(".tar.gz") {
+        return Some(CompressionFormat::TarGz);
+    }
+
+    if filename.ends_with(".tar.xz") {
+        return Some(CompressionFormat::TarXz);
+    }
+
+    None
+}
+
 pub struct ChecksumReader<R: AsyncBufRead + Send + Sync + Unpin> {
     reader: R,
     hasher: Sha256,
@@ -94,17 +112,16 @@ pub async fn download_and_unpack(source: &str, dest: impl AsRef<Path>) -> Result
         fs::create_dir_all(dest.as_ref())?;
     }
 
-    let filename = PathBuf::from(filename);
-    let ext = filename.extension().and_then(|f| f.to_str());
+    let format = parse_compression_format(filename.to_str().unwrap());
 
-    match ext {
-        Some("tar.gz") => {
+    match format {
+        Some(CompressionFormat::TarGz) => {
             let mut archive = Archive::new(GzipDecoder::new(file));
             archive.unpack(dest.as_ref()).await?;
 
             unwrap_archive!(archive)
         }
-        Some("tar.xz") => {
+        Some(CompressionFormat::TarXz) => {
             let mut archive = Archive::new(XzDecoder::new(file));
             archive.unpack(dest.as_ref()).await?;
 
@@ -118,5 +135,24 @@ pub async fn download_and_unpack(source: &str, dest: impl AsRef<Path>) -> Result
 
             file.compute()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_compression_format() {
+        assert_eq!(
+            parse_compression_format("foo.tar.gz"),
+            Some(CompressionFormat::TarGz)
+        );
+        assert_eq!(
+            parse_compression_format("foo.tar.xz"),
+            Some(CompressionFormat::TarXz)
+        );
+
+        assert_eq!(parse_compression_format("foo"), None);
     }
 }

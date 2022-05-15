@@ -9,7 +9,7 @@ use crate::install::channel::Receiver;
 use crate::install::{self, Event, Installer, Stage};
 use crate::utils::{parse_package_config, root_dir};
 
-#[derive(Debug, Parser)]
+#[derive(Parser)]
 pub struct Opts {
     filename: PathBuf,
 }

@@ -6,7 +6,7 @@ use tokio::fs;
 use crate::store::{list_installed, Action, Store, Transaction};
 use crate::utils::{parse_id, root_dir};
 
-#[derive(Debug, Parser)]
+#[derive(Parser)]
 pub struct Opts {
     pub id: String,
 }
@@ -36,7 +36,7 @@ pub async fn run(opts: Opts) -> Result<()> {
             continue;
         }
 
-        let is_valid = match entry.path().read_link() {
+        let is_valid = match fs::read_link(entry.path()).await {
             Ok(target) => target.exists(),
             Err(_) => false,
         };

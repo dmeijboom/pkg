@@ -6,7 +6,7 @@ use clap_complete::{generate, Shell};
 
 use crate::Args;
 
-#[derive(Debug, Parser)]
+#[derive(Parser)]
 pub struct Opts {
     #[clap(long, arg_enum)]
     generator: Shell,

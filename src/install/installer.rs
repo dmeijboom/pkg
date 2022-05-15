@@ -31,6 +31,16 @@ pub struct Opts<'o> {
     pub stage: Stage,
 }
 
+pub struct InstallResult {
+    pub published: Vec<String>,
+}
+
+impl InstallResult {
+    pub fn new(published: Vec<String>) -> Self {
+        Self { published }
+    }
+}
+
 fn find_file(dir: impl AsRef<Path>, pat: Glob) -> Result<PathBuf> {
     let matcher = pat.compile_matcher();
     let read_dir = dir.as_ref().read_dir()?;
@@ -142,6 +152,10 @@ impl<'i> Installer<'i> {
                         None => out_bin_dir.join(source.file_name().unwrap()),
                     };
 
+                    if !source.exists() {
+                        return Err(anyhow!("source does not exist"));
+                    }
+
                     fs::copy(&source, &dest).await.context("copy failed")?;
                     fs::set_permissions(dest, Permissions::from_mode(0o755)).await?;
                 }
@@ -183,7 +197,7 @@ impl<'i> Installer<'i> {
         Ok(())
     }
 
-    async fn publish(&self, published: Vec<String>) -> Result<()> {
+    async fn publish(&self, published: &[String]) -> Result<()> {
         if !self.dirs.bin.exists() {
             fs::create_dir_all(&self.dirs.bin).await?;
         }
@@ -202,13 +216,13 @@ impl<'i> Installer<'i> {
                 fs::remove_file(&link).await?;
             }
 
-            symlink(pkg_bin_dir.join(&link), link).await?;
+            symlink(pkg_bin_dir.join(target), link).await?;
         }
 
         Ok(())
     }
 
-    pub async fn install(self, opts: Opts<'_>) -> Result<()> {
+    pub async fn install(self, opts: Opts<'_>) -> Result<InstallResult> {
         self.tx.send(Event::EnterStage(Stage::FetchSources)).await?;
         self.fetch_sources(opts.os, opts.arch).await?;
         self.tx.send(Event::ExitStage(Stage::FetchSources)).await?;
@@ -227,12 +241,14 @@ impl<'i> Installer<'i> {
 
                 if opts.stage != Stage::Package {
                     self.tx.send(Event::EnterStage(Stage::Publish)).await?;
-                    self.publish(published).await?;
+                    self.publish(&published).await?;
                     self.tx.send(Event::ExitStage(Stage::Publish)).await?;
+
+                    return Ok(InstallResult::new(published));
                 }
             }
         }
 
-        Ok(())
+        Ok(InstallResult::new(vec![]))
     }
 }

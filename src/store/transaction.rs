@@ -15,6 +15,7 @@ pub struct Transaction {
     pub created_at: u64,
     pub package_id: String,
     pub action: Action,
+    pub published: Vec<String>,
 }
 
 impl Transaction {
@@ -23,10 +24,16 @@ impl Transaction {
             before,
             package_id,
             action,
+            published: vec![],
             created_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
         }
+    }
+
+    pub fn with_published(mut self, published: Vec<String>) -> Self {
+        self.published = published;
+        self
     }
 }

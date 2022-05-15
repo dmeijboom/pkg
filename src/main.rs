@@ -9,13 +9,13 @@ mod pkgscript;
 mod store;
 mod utils;
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 struct Args {
     #[clap(subcommand)]
     cmd: Cmd,
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 enum Cmd {
     #[clap(about = "Install a package")]
     Install(cmd::install::Opts),

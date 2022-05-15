@@ -11,7 +11,7 @@ use crate::install::{self, Event, Installer, Stage};
 use crate::store::{list_installed, Action, Store, Transaction};
 use crate::utils::{parse_package_config, root_dir};
 
-#[derive(ClapParser, Debug)]
+#[derive(ClapParser)]
 pub struct Opts {
     #[clap(value_hint = ValueHint::FilePath)]
     filename: PathBuf,
@@ -41,7 +41,7 @@ pub async fn run(opts: Opts) -> Result<()> {
     let (installer, rx) = Installer::new(&package, root)?;
     let progress = tokio::spawn(async move { show_progress(total_stages, rx).await });
 
-    installer
+    let result = installer
         .install(install::Opts {
             os: env::consts::OS,
             arch: env::consts::ARCH,
@@ -56,11 +56,10 @@ pub async fn run(opts: Opts) -> Result<()> {
 
     progress.await?;
 
-    store.add(&Transaction::new(
-        store.root()?,
-        package_id,
-        Action::Install,
-    ))?;
+    store.add(
+        &Transaction::new(store.root()?, package_id, Action::Install)
+            .with_published(result.published),
+    )?;
 
     println!("{}", ">> installed".blue());
 
