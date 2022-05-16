@@ -1,7 +1,7 @@
-use std::fs;
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Result};
+use tokio::fs;
 
 use crate::store::Transaction;
 use sha2::{Digest, Sha256};
@@ -15,26 +15,51 @@ impl Store {
         Self { root_dir }
     }
 
-    pub fn root(&self) -> Result<Option<String>> {
+    pub async fn walk(&self, mut f: impl FnMut(Transaction) -> bool) -> Result<()> {
+        if let Some(hash) = self.root().await? {
+            let mut tx = self.read(&hash).await?;
+
+            loop {
+                let mut next = None;
+
+                if let Some(hash) = &tx.before {
+                    next = Some(self.read(hash).await?);
+                }
+
+                if !f(tx) {
+                    return Ok(());
+                }
+
+                match next {
+                    Some(next) => tx = next,
+                    None => break,
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn root(&self) -> Result<Option<String>> {
         let file = self.root_dir.join("root");
 
         if !file.exists() {
             return Ok(None);
         }
 
-        let content = fs::read_to_string(file)?;
+        let content = fs::read_to_string(file).await?;
 
         Ok(Some(content))
     }
 
-    pub fn read(&self, hash: &str) -> Result<Transaction> {
+    pub async fn read(&self, hash: &str) -> Result<Transaction> {
         let file = self.root_dir.join(hash);
 
         if !file.exists() {
             return Err(anyhow!("transaction '{}' does not exist", hash));
         }
 
-        let content = fs::read_to_string(file)?;
+        let content = fs::read_to_string(file).await?;
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
 
@@ -53,7 +78,7 @@ impl Store {
         Ok(tx)
     }
 
-    pub fn add(&self, tx: &Transaction) -> Result<String> {
+    pub async fn add(&self, tx: &Transaction) -> Result<String> {
         let output = serde_dhall::serialize(tx)
             .static_type_annotation()
             .to_string()?;
@@ -63,11 +88,11 @@ impl Store {
         let hash = hex::encode(hasher.finalize());
 
         if !self.root_dir.exists() {
-            fs::create_dir_all(&self.root_dir)?;
+            fs::create_dir_all(&self.root_dir).await?;
         }
 
-        fs::write(self.root_dir.join(&hash), output)?;
-        fs::write(self.root_dir.join("root"), hash.clone())?;
+        fs::write(self.root_dir.join(&hash), output).await?;
+        fs::write(self.root_dir.join("root"), hash.clone()).await?;
 
         Ok(hash)
     }

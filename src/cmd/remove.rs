@@ -3,7 +3,7 @@ use clap::Parser;
 use colored::Colorize;
 use tokio::fs;
 
-use crate::store::{list_installed, Action, Store, Transaction};
+use crate::store::{is_installed, Action, Store, Transaction};
 use crate::utils::{parse_id, root_dir};
 
 #[derive(Parser)]
@@ -15,10 +15,7 @@ pub async fn run(opts: Opts) -> Result<()> {
     let root = root_dir();
     let store = Store::new(root.join("store"));
 
-    if !list_installed(&store)?
-        .iter()
-        .any(|tx| tx.package_id == opts.id)
-    {
+    if !is_installed(&store, &opts.id).await? {
         return Err(anyhow!("package is not installed"));
     }
 
@@ -55,7 +52,11 @@ pub async fn run(opts: Opts) -> Result<()> {
         }
     }
 
-    store.add(&Transaction::new(store.root()?, opts.id, Action::Remove))?;
+    let root_tx = store.root().await?;
+
+    store
+        .add(&Transaction::new(root_tx, opts.id, Action::Remove))
+        .await?;
 
     Ok(())
 }

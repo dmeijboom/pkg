@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
     match args.cmd {
         Cmd::Install(opts) => cmd::install::run(opts).await,
         Cmd::Remove(opts) => cmd::remove::run(opts).await,
-        Cmd::List => cmd::list::run(),
+        Cmd::List => cmd::list::run().await,
         Cmd::Check(opts) => cmd::check::run(opts).await,
         Cmd::Complete(opts) => cmd::complete::run(opts),
     }
