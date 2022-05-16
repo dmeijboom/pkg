@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 url = "2.2.2"
 hex = "0.4.3"
+git2 = "0.14"
 sha2 = "0.10.2"
 globset = "0.4.8"
 chrono = "0.4.19"

@@ -7,19 +7,15 @@ pub use transaction::{Action, Transaction};
 
 use anyhow::Result;
 
-pub fn list_installed(store: &Store) -> Result<Vec<Transaction>> {
+pub async fn list_installed(store: &Store) -> Result<Vec<Transaction>> {
     let mut transactions = vec![];
 
-    if let Some(root_hash) = store.root()? {
-        let mut before = Some(root_hash);
-
-        while let Some(hash) = before.take() {
-            let tx = store.read(&hash)?;
-
-            before = tx.before.clone();
+    store
+        .walk(|tx| {
             transactions.push(tx);
-        }
-    }
+            true
+        })
+        .await?;
 
     let mut index_map = HashMap::new();
     let mut installed = vec![];
@@ -41,6 +37,26 @@ pub fn list_installed(store: &Store) -> Result<Vec<Transaction>> {
             }
         };
     }
+
+    Ok(installed)
+}
+
+pub async fn is_installed(store: &Store, package_id: &str) -> Result<bool> {
+    let mut installed = false;
+
+    store
+        .walk(|tx| match tx.action {
+            Action::Install if tx.package_id == package_id => {
+                installed = true;
+                false
+            }
+            Action::Remove if tx.package_id == package_id => {
+                installed = true;
+                false
+            }
+            _ => true,
+        })
+        .await?;
 
     Ok(installed)
 }
