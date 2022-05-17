@@ -27,6 +27,14 @@ enum Cmd {
     Check(cmd::check::Opts),
     #[clap(about = "Print shell completions")]
     Complete(cmd::complete::Opts),
+    #[clap(about = "Manage repositories", subcommand)]
+    Repo(RepoCmd),
+}
+
+#[derive(Parser)]
+pub enum RepoCmd {
+    #[clap(about = "List repositories")]
+    List,
 }
 
 #[tokio::main]
@@ -39,5 +47,8 @@ async fn main() -> Result<()> {
         Cmd::List => cmd::list::run().await,
         Cmd::Check(opts) => cmd::check::run(opts).await,
         Cmd::Complete(opts) => cmd::complete::run(opts),
+        Cmd::Repo(cmd) => match cmd {
+            RepoCmd::List => cmd::repo::list::run().await,
+        },
     }
 }

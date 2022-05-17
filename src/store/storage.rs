@@ -1,16 +1,17 @@
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Result};
+use bincode::config;
 use tokio::fs;
 
 use crate::store::Transaction;
 use crate::utils::sha256sum;
 
-pub struct Store {
+pub struct Storage {
     root_dir: PathBuf,
 }
 
-impl Store {
+impl Storage {
     pub fn new(root_dir: PathBuf) -> Self {
         Self { root_dir }
     }
@@ -59,7 +60,7 @@ impl Store {
             return Err(anyhow!("transaction '{}' does not exist", hash));
         }
 
-        let content = fs::read_to_string(file).await?;
+        let content = fs::read(file).await?;
         let expected = sha256sum(&content);
 
         if hash != expected {
@@ -70,15 +71,13 @@ impl Store {
             ));
         }
 
-        let tx = serde_dhall::from_str(&content).parse()?;
+        let (tx, _) = bincode::decode_from_slice(&content, config::standard())?;
 
         Ok(tx)
     }
 
     pub async fn add(&self, tx: &Transaction) -> Result<String> {
-        let output = serde_dhall::serialize(tx)
-            .static_type_annotation()
-            .to_string()?;
+        let output = bincode::encode_to_vec(tx, config::standard())?;
         let hash = sha256sum(&output);
 
         if !self.root_dir.exists() {

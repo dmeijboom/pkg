@@ -1,32 +1,38 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use serde_dhall::StaticType;
 
 use crate::store::content::Content;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, StaticType)]
-pub enum Action {
-    Install,
-    Remove,
+#[derive(Debug, Serialize, Deserialize)]
+pub enum TransactionKind {
+    InstallPackage {
+        package_id: String,
+        content: Vec<Content>,
+    },
+    RemovePackage {
+        package_id: String,
+    },
+    AddRepository {
+        name: String,
+        git_remote: String,
+    },
 }
 
-#[derive(Debug, Serialize, Deserialize, StaticType)]
+#[derive(Debug, Serialize, Deserialize, Encode, Decode)]
 pub struct Transaction {
+    #[bincode(with_serde)]
+    pub kind: TransactionKind,
     pub before: Option<String>,
     pub created_at: u64,
-    pub package_id: String,
-    pub action: Action,
-    pub content: Vec<Content>,
 }
 
 impl Transaction {
-    pub fn new(before: Option<String>, package_id: String, action: Action) -> Self {
+    pub fn new(kind: TransactionKind) -> Self {
         Self {
-            before,
-            package_id,
-            action,
-            content: vec![],
+            kind,
+            before: None,
             created_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -34,8 +40,8 @@ impl Transaction {
         }
     }
 
-    pub fn with_content(mut self, content: Vec<Content>) -> Self {
-        self.content = content;
+    pub fn with_before(mut self, before: String) -> Self {
+        self.before = Some(before);
         self
     }
 }
