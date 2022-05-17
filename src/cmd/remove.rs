@@ -3,8 +3,8 @@ use clap::Parser;
 use colored::Colorize;
 use tokio::fs;
 
-use crate::store::{is_installed, Action, Store, Transaction};
-use crate::utils::{parse_id, root_dir};
+use crate::store::{list_installed, Action, Store, Transaction};
+use crate::utils::root_dir;
 
 #[derive(Parser)]
 pub struct Opts {
@@ -14,42 +14,51 @@ pub struct Opts {
 pub async fn run(opts: Opts) -> Result<()> {
     let root = root_dir();
     let store = Store::new(root.join("store"));
+    let mut installed = list_installed(&store).await?;
 
-    if !is_installed(&store, &opts.id).await? {
-        return Err(anyhow!("package is not installed"));
-    }
+    let idx = installed
+        .iter()
+        .position(|tx| tx.package_id == opts.id)
+        .ok_or_else(|| anyhow!("packages not installed"))?;
+    let install_tx = installed.remove(idx);
 
     println!("{}", format!(">> removing {}", opts.id).blue());
 
-    let (name, version) = parse_id(&opts.id)?;
-    let pkg_dir = root.join("packages").join(name).join(version);
-
-    fs::remove_dir_all(&pkg_dir).await?;
-
-    let mut read_dir = fs::read_dir(root.join("bin")).await?;
-
-    while let Some(entry) = read_dir.next_entry().await? {
-        if !entry.path().is_symlink() {
+    for content in install_tx.content {
+        if !content.published {
             continue;
         }
 
-        let is_valid = match fs::read_link(entry.path()).await {
-            Ok(target) => target.exists(),
-            Err(_) => false,
-        };
+        let link = root.join("bin").join(content.filename);
 
-        if !is_valid {
-            fs::remove_file(entry.path()).await?;
-
-            println!(
-                "{}",
-                format!(
-                    "unpublishing {}",
-                    entry.path().file_name().and_then(|f| f.to_str()).unwrap()
-                )
-                .white()
-            );
+        if link.exists() {
+            fs::remove_file(link).await?;
         }
+    }
+
+    let mut read_dir = fs::read_dir(root.join("content")).await?;
+
+    while let Some(entry) = read_dir.next_entry().await? {
+        let is_dangling = !installed.iter().any(|tx| {
+            tx.content
+                .iter()
+                .any(|c| Some(c.checksum.as_str()) == entry.file_name().to_str())
+        });
+
+        if !is_dangling {
+            continue;
+        }
+
+        println!(
+            "{}",
+            format!(
+                "removing dangling file: {}",
+                entry.file_name().to_str().unwrap()
+            )
+            .white()
+        );
+
+        fs::remove_file(entry.path()).await?;
     }
 
     let root_tx = store.root().await?;

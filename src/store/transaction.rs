@@ -3,6 +3,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use serde_dhall::StaticType;
 
+use crate::store::content::Content;
+
 #[derive(Debug, Serialize, Deserialize, PartialEq, StaticType)]
 pub enum Action {
     Install,
@@ -15,7 +17,7 @@ pub struct Transaction {
     pub created_at: u64,
     pub package_id: String,
     pub action: Action,
-    pub published: Vec<String>,
+    pub content: Vec<Content>,
 }
 
 impl Transaction {
@@ -24,7 +26,7 @@ impl Transaction {
             before,
             package_id,
             action,
-            published: vec![],
+            content: vec![],
             created_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -32,8 +34,8 @@ impl Transaction {
         }
     }
 
-    pub fn with_published(mut self, published: Vec<String>) -> Self {
-        self.published = published;
+    pub fn with_content(mut self, content: Vec<Content>) -> Self {
+        self.content = content;
         self
     }
 }

@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use tokio::fs;
 
 use crate::store::Transaction;
-use sha2::{Digest, Sha256};
+use crate::utils::sha256sum;
 
 pub struct Store {
     root_dir: PathBuf,
@@ -60,10 +60,7 @@ impl Store {
         }
 
         let content = fs::read_to_string(file).await?;
-        let mut hasher = Sha256::new();
-        hasher.update(content.as_bytes());
-
-        let expected = hex::encode(hasher.finalize());
+        let expected = sha256sum(&content);
 
         if hash != expected {
             return Err(anyhow!(
@@ -82,10 +79,7 @@ impl Store {
         let output = serde_dhall::serialize(tx)
             .static_type_annotation()
             .to_string()?;
-        let mut hasher = Sha256::new();
-        hasher.update(output.as_bytes());
-
-        let hash = hex::encode(hasher.finalize());
+        let hash = sha256sum(&output);
 
         if !self.root_dir.exists() {
             fs::create_dir_all(&self.root_dir).await?;

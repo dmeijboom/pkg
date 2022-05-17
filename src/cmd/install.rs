@@ -27,7 +27,7 @@ pub async fn run(opts: Opts) -> Result<()> {
     let package = parse_package_config(opts.filename)?;
     let package_id = format!("{}@{}", package.name, package.version);
 
-    if !opts.force && is_installed(&store, &package_id).await? {
+    if !opts.force && is_installed(&store, &package_id).await?.is_some() {
         return Err(anyhow!("package is already installed"));
     }
 
@@ -55,10 +55,7 @@ pub async fn run(opts: Opts) -> Result<()> {
     let root_tx = store.root().await?;
 
     store
-        .add(
-            &Transaction::new(root_tx, package_id, Action::Install)
-                .with_published(result.published),
-        )
+        .add(&Transaction::new(root_tx, package_id, Action::Install).with_content(result.content))
         .await?;
 
     println!("{}", ">> installed".blue());
