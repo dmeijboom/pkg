@@ -8,7 +8,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::install::channel::Receiver;
 use crate::install::{self, Event, Installer, Stage};
-use crate::store::{is_installed, Action, Store, Transaction};
+use crate::store::{Storage, Store, Transaction, TransactionKind};
 use crate::utils::{parse_package_config, root_dir};
 
 #[derive(ClapParser)]
@@ -23,11 +23,12 @@ pub struct Opts {
 
 pub async fn run(opts: Opts) -> Result<()> {
     let root = root_dir();
-    let store = Store::new(root.join("store"));
+    let storage = Storage::new(root.join("store"));
+    let mut store = Store::new(&storage);
     let package = parse_package_config(opts.filename)?;
     let package_id = format!("{}@{}", package.name, package.version);
 
-    if !opts.force && is_installed(&store, &package_id).await?.is_some() {
+    if !opts.force && store.is_installed(&package_id).await?.is_some() {
         return Err(anyhow!("package is already installed"));
     }
 
@@ -52,10 +53,11 @@ pub async fn run(opts: Opts) -> Result<()> {
 
     progress.await?;
 
-    let root_tx = store.root().await?;
-
     store
-        .add(&Transaction::new(root_tx, package_id, Action::Install).with_content(result.content))
+        .add(Transaction::new(TransactionKind::InstallPackage {
+            package_id,
+            content: result.content,
+        }))
         .await?;
 
     println!("{}", ">> installed".blue());

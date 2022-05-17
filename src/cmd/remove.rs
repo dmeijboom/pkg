@@ -3,7 +3,7 @@ use clap::Parser;
 use colored::Colorize;
 use tokio::fs;
 
-use crate::store::{list_installed, Action, Store, Transaction};
+use crate::store::{Storage, Store, Transaction, TransactionKind};
 use crate::utils::root_dir;
 
 #[derive(Parser)]
@@ -13,23 +13,24 @@ pub struct Opts {
 
 pub async fn run(opts: Opts) -> Result<()> {
     let root = root_dir();
-    let store = Store::new(root.join("store"));
-    let mut installed = list_installed(&store).await?;
+    let storage = Storage::new(root.join("store"));
+    let mut store = Store::new(&storage);
+    let mut installed = store.list_installed().await?;
 
     let idx = installed
         .iter()
         .position(|tx| tx.package_id == opts.id)
         .ok_or_else(|| anyhow!("packages not installed"))?;
-    let install_tx = installed.remove(idx);
+    let content = installed.remove(idx).content;
 
     println!("{}", format!(">> removing {}", opts.id).blue());
 
-    for content in install_tx.content {
+    for content in content.iter() {
         if !content.published {
             continue;
         }
 
-        let link = root.join("bin").join(content.filename);
+        let link = root.join("bin").join(&content.filename);
 
         if link.exists() {
             fs::remove_file(link).await?;
@@ -39,8 +40,8 @@ pub async fn run(opts: Opts) -> Result<()> {
     let mut read_dir = fs::read_dir(root.join("content")).await?;
 
     while let Some(entry) = read_dir.next_entry().await? {
-        let is_dangling = !installed.iter().any(|tx| {
-            tx.content
+        let is_dangling = !installed.iter().any(|meta| {
+            meta.content
                 .iter()
                 .any(|c| Some(c.checksum.as_str()) == entry.file_name().to_str())
         });
@@ -61,10 +62,10 @@ pub async fn run(opts: Opts) -> Result<()> {
         fs::remove_file(entry.path()).await?;
     }
 
-    let root_tx = store.root().await?;
-
     store
-        .add(&Transaction::new(root_tx, opts.id, Action::Remove))
+        .add(Transaction::new(TransactionKind::RemovePackage {
+            package_id: opts.id,
+        }))
         .await?;
 
     Ok(())

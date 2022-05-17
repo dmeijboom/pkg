@@ -1,64 +1,103 @@
 mod content;
-mod store;
+mod storage;
 mod transaction;
 
-pub use content::{Content, ContentType};
 use std::collections::HashMap;
-pub use store::Store;
-pub use transaction::{Action, Transaction};
+
+pub use content::{Content, ContentType};
+pub use storage::Storage;
+pub use transaction::{Transaction, TransactionKind};
 
 use anyhow::Result;
 
-pub async fn list_installed(store: &Store) -> Result<Vec<Transaction>> {
-    let mut transactions = vec![];
-
-    store
-        .walk(|tx| {
-            transactions.push(tx);
-            true
-        })
-        .await?;
-
-    let mut index_map = HashMap::new();
-    let mut installed = vec![];
-
-    for tx in transactions.into_iter().rev() {
-        match tx.action {
-            Action::Install => {
-                if index_map.contains_key(&tx.package_id) {
-                    continue;
-                }
-
-                index_map.insert(tx.package_id.clone(), installed.len());
-                installed.push(tx);
-            }
-            Action::Remove => {
-                if let Some(index) = index_map.remove(&tx.package_id) {
-                    installed.remove(index);
-                }
-            }
-        };
-    }
-
-    Ok(installed)
+pub struct InstallMeta {
+    pub content: Vec<Content>,
+    pub package_id: String,
+    pub installed_at: u64,
 }
 
-pub async fn is_installed(store: &Store, package_id: &str) -> Result<Option<Transaction>> {
-    let mut installed = None;
+pub struct Store<'s> {
+    storage: &'s Storage,
+}
 
-    store
-        .walk(|tx| match tx.action {
-            Action::Install if tx.package_id == package_id => {
-                installed = Some(tx);
-                false
-            }
-            Action::Remove if tx.package_id == package_id => {
-                installed = None;
-                false
-            }
-            _ => true,
-        })
-        .await?;
+impl<'s> Store<'s> {
+    pub fn new(storage: &'s Storage) -> Self {
+        Self { storage }
+    }
 
-    Ok(installed)
+    pub async fn add(&mut self, mut tx: Transaction) -> Result<()> {
+        if let Some(hash) = self.storage.root().await? {
+            tx = tx.with_before(hash);
+        }
+
+        self.storage.add(&tx).await?;
+
+        Ok(())
+    }
+
+    pub async fn list_installed(&self) -> Result<Vec<InstallMeta>> {
+        let mut transactions = vec![];
+
+        self.storage
+            .walk(|tx| {
+                transactions.push(tx);
+                true
+            })
+            .await?;
+
+        let mut index_map = HashMap::new();
+        let mut installed = vec![];
+
+        for tx in transactions.into_iter().rev() {
+            match tx.kind {
+                TransactionKind::InstallPackage {
+                    package_id,
+                    content,
+                } => {
+                    if index_map.contains_key(&package_id) {
+                        continue;
+                    }
+
+                    index_map.insert(package_id.clone(), installed.len());
+                    installed.push(InstallMeta {
+                        package_id,
+                        content,
+                        installed_at: tx.created_at,
+                    });
+                }
+                TransactionKind::RemovePackage { package_id, .. } => {
+                    if let Some(index) = index_map.remove(&package_id) {
+                        installed.remove(index);
+                    }
+                }
+                _ => {}
+            };
+        }
+
+        Ok(installed)
+    }
+
+    pub async fn is_installed(&self, install_package_id: &str) -> Result<Option<Transaction>> {
+        let mut installed = None;
+
+        self.storage
+            .walk(|tx| match &tx.kind {
+                TransactionKind::InstallPackage { package_id, .. }
+                    if package_id == install_package_id =>
+                {
+                    installed = Some(tx);
+                    false
+                }
+                TransactionKind::RemovePackage { package_id, .. }
+                    if package_id == install_package_id =>
+                {
+                    installed = None;
+                    false
+                }
+                _ => true,
+            })
+            .await?;
+
+        Ok(installed)
+    }
 }

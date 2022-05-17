@@ -1,12 +1,11 @@
 use serde::{Deserialize, Serialize};
-use serde_dhall::StaticType;
 
-#[derive(Debug, PartialEq, Serialize, Deserialize, StaticType)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum ContentType {
     Executable,
 }
 
-#[derive(Debug, Serialize, Deserialize, StaticType)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Content {
     pub published: bool,
     pub checksum: String,
