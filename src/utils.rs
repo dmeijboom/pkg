@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::{env, fs};
 
 use anyhow::{anyhow, Result};
+use sha2::{Digest, Sha256};
 
 use crate::package::Package;
 
@@ -27,4 +28,11 @@ pub fn parse_id(id: &str) -> Result<(&str, &str)> {
     }
 
     Ok((components[0], components[1]))
+}
+
+pub fn sha256sum(input: impl AsRef<[u8]>) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(input.as_ref());
+
+    hex::encode(hasher.finalize())
 }
