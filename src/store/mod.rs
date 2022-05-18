@@ -10,10 +10,16 @@ pub use transaction::{Transaction, TransactionKind};
 
 use anyhow::Result;
 
-pub struct InstallMeta {
+pub struct PackageMeta {
     pub content: Vec<Content>,
     pub package_id: String,
-    pub installed_at: u64,
+    pub created_at: u64,
+}
+
+pub struct RepositoryMeta {
+    pub name: String,
+    pub git_remote: String,
+    pub created_at: u64,
 }
 
 pub struct Store<'s> {
@@ -35,49 +41,93 @@ impl<'s> Store<'s> {
         Ok(())
     }
 
-    pub async fn list_installed(&self) -> Result<Vec<InstallMeta>> {
-        let mut transactions = vec![];
+    pub async fn list_installed(&self) -> Result<Vec<PackageMeta>> {
+        let mut marked = HashMap::new();
+        let mut packages = vec![];
 
         self.storage
             .walk(|tx| {
-                transactions.push(tx);
+                match tx.kind {
+                    TransactionKind::InstallPackage {
+                        package_id,
+                        content,
+                    } if !marked.contains_key(&package_id) => {
+                        marked.insert(package_id.clone(), true);
+                        packages.push(PackageMeta {
+                            package_id,
+                            content,
+                            created_at: tx.created_at,
+                        });
+                    }
+                    TransactionKind::RemovePackage { package_id, .. }
+                        if !marked.contains_key(&package_id) =>
+                    {
+                        marked.insert(package_id, false);
+                    }
+                    _ => {}
+                };
+
                 true
             })
             .await?;
 
-        let mut index_map = HashMap::new();
-        let mut installed = vec![];
-
-        for tx in transactions.into_iter().rev() {
-            match tx.kind {
-                TransactionKind::InstallPackage {
-                    package_id,
-                    content,
-                } => {
-                    if index_map.contains_key(&package_id) {
-                        continue;
-                    }
-
-                    index_map.insert(package_id.clone(), installed.len());
-                    installed.push(InstallMeta {
-                        package_id,
-                        content,
-                        installed_at: tx.created_at,
-                    });
-                }
-                TransactionKind::RemovePackage { package_id, .. } => {
-                    if let Some(index) = index_map.remove(&package_id) {
-                        installed.remove(index);
-                    }
-                }
-                _ => {}
-            };
-        }
-
-        Ok(installed)
+        Ok(packages)
     }
 
-    pub async fn is_installed(&self, install_package_id: &str) -> Result<Option<Transaction>> {
+    pub async fn find_added_repository(&self, repo_name: &str) -> Result<Option<Transaction>> {
+        let mut repo = None;
+
+        self.storage
+            .walk(|tx| match &tx.kind {
+                TransactionKind::AddRepository { name, .. } if name == repo_name => {
+                    repo = Some(tx);
+                    false
+                }
+                TransactionKind::RemoveRepository { name, .. } if name == repo_name => {
+                    repo = None;
+                    false
+                }
+                _ => true,
+            })
+            .await?;
+
+        Ok(repo)
+    }
+
+    pub async fn list_repositories(&self) -> Result<Vec<RepositoryMeta>> {
+        let mut marked = HashMap::new();
+        let mut repositories = vec![];
+
+        self.storage
+            .walk(|tx| {
+                match tx.kind {
+                    TransactionKind::AddRepository {
+                        name, git_remote, ..
+                    } if !marked.contains_key(&name) => {
+                        marked.insert(name.clone(), true);
+                        repositories.push(RepositoryMeta {
+                            name,
+                            git_remote,
+                            created_at: tx.created_at,
+                        });
+                    }
+                    TransactionKind::RemoveRepository { name } if !marked.contains_key(&name) => {
+                        marked.insert(name, false);
+                    }
+                    _ => {}
+                }
+
+                true
+            })
+            .await?;
+
+        Ok(repositories)
+    }
+
+    pub async fn find_installed_package(
+        &self,
+        install_package_id: &str,
+    ) -> Result<Option<Transaction>> {
         let mut installed = None;
 
         self.storage

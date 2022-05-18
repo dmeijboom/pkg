@@ -35,6 +35,8 @@ enum Cmd {
 pub enum RepoCmd {
     #[clap(about = "List repositories")]
     List,
+    #[clap(about = "Add a repository")]
+    Add(cmd::repo::add::Opts),
 }
 
 #[tokio::main]
@@ -48,6 +50,7 @@ async fn main() -> Result<()> {
         Cmd::Check(opts) => cmd::check::run(opts).await,
         Cmd::Complete(opts) => cmd::complete::run(opts),
         Cmd::Repo(cmd) => match cmd {
+            RepoCmd::Add(opts) => cmd::repo::add::run(opts).await,
             RepoCmd::List => cmd::repo::list::run().await,
         },
     }

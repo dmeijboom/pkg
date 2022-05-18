@@ -68,5 +68,7 @@ pub async fn run(opts: Opts) -> Result<()> {
         }))
         .await?;
 
+    println!("{}", "✓ package removed".green());
+
     Ok(())
 }
