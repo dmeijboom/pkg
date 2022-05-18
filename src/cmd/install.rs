@@ -28,7 +28,7 @@ pub async fn run(opts: Opts) -> Result<()> {
     let package = parse_package_config(opts.filename)?;
     let package_id = format!("{}@{}", package.name, package.version);
 
-    if !opts.force && store.is_installed(&package_id).await?.is_some() {
+    if !opts.force && store.find_installed_package(&package_id).await?.is_some() {
         return Err(anyhow!("package is already installed"));
     }
 

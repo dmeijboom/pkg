@@ -11,9 +11,9 @@ pub async fn run() -> Result<()> {
     let storage = Storage::new(root_dir().join("store"));
     let store = Store::new(&storage);
 
-    for tx in store.list_installed().await? {
-        let time = Utc.timestamp(tx.installed_at as i64, 0);
-        let (name, version) = parse_id(&tx.package_id)?;
+    for meta in store.list_installed().await? {
+        let time = Utc.timestamp(meta.created_at as i64, 0);
+        let (name, version) = parse_id(&meta.package_id)?;
 
         println!(
             "{} {}",

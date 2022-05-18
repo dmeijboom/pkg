@@ -16,8 +16,12 @@ pub enum TransactionKind {
     },
     AddRepository {
         name: String,
+        version: String,
         git_remote: String,
     },
+    RemoveRepository {
+        name: String,
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Encode, Decode)]
