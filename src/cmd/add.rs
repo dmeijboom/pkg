@@ -6,6 +6,7 @@ use clap::{Parser as ClapParser, ValueHint};
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
 
+use crate::id::Id;
 use crate::install::channel::Receiver;
 use crate::install::{self, Event, Installer, Stage};
 use crate::store::{Storage, Store, Transaction, TransactionKind};
@@ -13,7 +14,7 @@ use crate::utils::{read_package_config, root_dir};
 
 #[derive(ClapParser)]
 pub struct Opts {
-    id: Option<String>,
+    id: Option<Id>,
     #[clap(short, value_hint = ValueHint::FilePath)]
     filename: Option<PathBuf>,
     #[clap(long)]
@@ -36,7 +37,7 @@ pub async fn run(opts: Opts) -> Result<()> {
     } else {
         return Err(anyhow!("either name or filename must be specified"));
     }?;
-    let package_id = format!("{}@{}", package.name, package.version);
+    let package_id = package.make_id();
 
     if !opts.force && store.find_installed_package(&package_id).await?.is_some() {
         return Err(anyhow!("package is already installed"));

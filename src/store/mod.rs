@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 
+use crate::id::Id;
 use crate::package::Package;
 
 pub use content::{Content, ContentType};
@@ -14,7 +15,8 @@ pub use transaction::{Transaction, TransactionKind};
 
 pub struct PackageMeta {
     pub content: Vec<Content>,
-    pub package_id: String,
+    pub name: String,
+    pub version: String,
     pub created_at: u64,
 }
 
@@ -57,7 +59,8 @@ impl<'s> Store<'s> {
                     } if !marked.contains_key(&package_id) => {
                         marked.insert(package_id.clone(), true);
                         packages.push(PackageMeta {
-                            package_id,
+                            name: package_id.name,
+                            version: package_id.version,
                             content,
                             created_at: tx.created_at,
                         });
@@ -143,7 +146,7 @@ impl<'s> Store<'s> {
 
     pub async fn find_installed_package(
         &self,
-        install_package_id: &str,
+        install_package_id: &Id,
     ) -> Result<Option<Transaction>> {
         let mut installed = None;
 
@@ -168,12 +171,14 @@ impl<'s> Store<'s> {
         Ok(installed)
     }
 
-    pub async fn search_package(&self, package_id: &str) -> Result<Option<Package>> {
+    pub async fn search_package(&self, package_id: &Id) -> Result<Option<Package>> {
         Ok(self
             .list_repositories()
             .await?
             .into_iter()
             .flat_map(|repo| repo.packages)
-            .find(|package| format!("{}@{}", package.name, package.version) == package_id))
+            .find(|package| {
+                package.name == package_id.name && package.version == package_id.version
+            }))
     }
 }

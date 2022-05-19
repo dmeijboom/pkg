@@ -1,5 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::id::Id;
 use crate::package::Package;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -9,11 +10,11 @@ use crate::store::content::Content;
 #[derive(Debug, Serialize, Deserialize)]
 pub enum TransactionKind {
     InstallPackage {
-        package_id: String,
+        package_id: Id,
         content: Vec<Content>,
     },
     RemovePackage {
-        package_id: String,
+        package_id: Id,
     },
     AddRepository {
         name: String,

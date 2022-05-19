@@ -3,6 +3,7 @@ use clap::Parser;
 
 mod cmd;
 mod download;
+mod id;
 mod install;
 mod package;
 mod pkgscript;

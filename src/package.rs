@@ -1,3 +1,4 @@
+use crate::id::Id;
 use serde::{Deserialize, Serialize};
 use serde_dhall::StaticType;
 
@@ -82,4 +83,13 @@ pub struct Package {
     pub description: String,
     pub sources: Sources,
     pub install: String,
+}
+
+impl Package {
+    pub fn make_id(&self) -> Id {
+        Id {
+            name: self.name.clone(),
+            version: self.version.clone(),
+        }
+    }
 }

@@ -3,12 +3,13 @@ use clap::Parser;
 use colored::Colorize;
 use tokio::fs;
 
+use crate::id::Id;
 use crate::store::{Storage, Store, Transaction, TransactionKind};
 use crate::utils::root_dir;
 
 #[derive(Parser)]
 pub struct Opts {
-    pub id: String,
+    pub id: Id,
 }
 
 pub async fn run(opts: Opts) -> Result<()> {
@@ -19,7 +20,7 @@ pub async fn run(opts: Opts) -> Result<()> {
 
     let idx = installed
         .iter()
-        .position(|tx| tx.package_id == opts.id)
+        .position(|tx| tx.name == opts.id.name && tx.version == opts.id.version)
         .ok_or_else(|| anyhow!("packages not installed"))?;
     let content = installed.remove(idx).content;
 
