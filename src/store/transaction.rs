@@ -1,5 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::package::Package;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
@@ -18,10 +19,11 @@ pub enum TransactionKind {
         name: String,
         version: String,
         git_remote: String,
+        packages: Vec<Package>,
     },
     RemoveRepository {
         name: String,
-    }
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize, Encode, Decode)]

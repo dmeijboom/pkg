@@ -18,7 +18,7 @@ struct Args {
 #[derive(Parser)]
 enum Cmd {
     #[clap(about = "Install a package")]
-    Install(cmd::install::Opts),
+    Add(cmd::add::Opts),
     #[clap(about = "Remove a package")]
     Remove(cmd::remove::Opts),
     #[clap(about = "List all installed packages")]
@@ -44,7 +44,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     match args.cmd {
-        Cmd::Install(opts) => cmd::install::run(opts).await,
+        Cmd::Add(opts) => cmd::add::run(opts).await,
         Cmd::Remove(opts) => cmd::remove::run(opts).await,
         Cmd::List => cmd::list::run().await,
         Cmd::Check(opts) => cmd::check::run(opts).await,

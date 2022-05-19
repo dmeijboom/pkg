@@ -3,10 +3,12 @@ use chrono::{TimeZone, Utc};
 use clap::Parser;
 use colored::Colorize;
 use git2::{Buf, Repository};
+use std::str;
 use temp_dir::TempDir;
 use tokio::fs;
 
 use crate::store::{Storage, Store, Transaction, TransactionKind};
+use crate::utils::parse_package_config;
 use crate::utils::root_dir;
 
 pub mod list {
@@ -24,7 +26,12 @@ pub mod list {
             println!(
                 "{} {}",
                 meta.name.green(),
-                format!("(at {})", time.to_rfc3339().bold()).white()
+                format!(
+                    "(at {}, total {} packages)",
+                    time.to_rfc3339().bold(),
+                    meta.packages.len().to_string().bold(),
+                )
+                .white()
             );
         }
 
@@ -63,8 +70,28 @@ pub mod add {
 
         let tmp_dir = TempDir::new()?;
         let repo = Repository::clone(&git_remote, tmp_dir.path())?;
-        let commit_id = repo.head()?.peel_to_commit()?.id();
+        let mut packages = vec![];
 
+        for entry in repo.index()?.iter() {
+            let pathname = str::from_utf8(&entry.path)?;
+
+            if !pathname.ends_with(".dhall") {
+                continue;
+            }
+
+            let blob = repo.find_blob(entry.id)?;
+            let content = str::from_utf8(blob.content())?;
+            let package = parse_package_config(content)?;
+
+            println!(
+                "{}",
+                format!("indexing package {}@{}", package.name, package.version).white()
+            );
+
+            packages.push(package);
+        }
+
+        let commit_id = repo.head()?.peel_to_commit()?.id();
         let mut builder = repo.packbuilder()?;
         let mut buf = Buf::new();
 
@@ -78,6 +105,7 @@ pub mod add {
                 name: opts.name,
                 git_remote,
                 version: commit_id.to_string()[..7].to_string(),
+                packages,
             }))
             .await?;
 

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use bincode::config;
 use tokio::fs;
 
@@ -71,7 +71,8 @@ impl Storage {
             ));
         }
 
-        let (tx, _) = bincode::decode_from_slice(&content, config::standard())?;
+        let (tx, _) = bincode::decode_from_slice(&content, config::standard())
+            .context(format!("failed to decode transaction: {}", hash))?;
 
         Ok(tx)
     }

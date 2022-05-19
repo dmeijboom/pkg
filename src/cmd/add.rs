@@ -9,12 +9,13 @@ use indicatif::{ProgressBar, ProgressStyle};
 use crate::install::channel::Receiver;
 use crate::install::{self, Event, Installer, Stage};
 use crate::store::{Storage, Store, Transaction, TransactionKind};
-use crate::utils::{parse_package_config, root_dir};
+use crate::utils::{read_package_config, root_dir};
 
 #[derive(ClapParser)]
 pub struct Opts {
-    #[clap(value_hint = ValueHint::FilePath)]
-    filename: PathBuf,
+    id: Option<String>,
+    #[clap(short, value_hint = ValueHint::FilePath)]
+    filename: Option<PathBuf>,
     #[clap(long)]
     force: bool,
     #[clap(long)]
@@ -25,7 +26,16 @@ pub async fn run(opts: Opts) -> Result<()> {
     let root = root_dir();
     let storage = Storage::new(root.join("store"));
     let mut store = Store::new(&storage);
-    let package = parse_package_config(opts.filename)?;
+    let package = if let Some(id) = opts.id {
+        store
+            .search_package(&id)
+            .await?
+            .ok_or_else(|| anyhow!("package not found"))
+    } else if let Some(filename) = opts.filename {
+        read_package_config(filename)
+    } else {
+        return Err(anyhow!("either name or filename must be specified"));
+    }?;
     let package_id = format!("{}@{}", package.name, package.version);
 
     if !opts.force && store.find_installed_package(&package_id).await?.is_some() {
@@ -60,7 +70,7 @@ pub async fn run(opts: Opts) -> Result<()> {
         }))
         .await?;
 
-    println!("{}", "✓ installed".green());
+    println!("{}", "✓ added".green());
 
     Ok(())
 }

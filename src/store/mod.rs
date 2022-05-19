@@ -4,11 +4,13 @@ mod transaction;
 
 use std::collections::HashMap;
 
+use anyhow::Result;
+
+use crate::package::Package;
+
 pub use content::{Content, ContentType};
 pub use storage::Storage;
 pub use transaction::{Transaction, TransactionKind};
-
-use anyhow::Result;
 
 pub struct PackageMeta {
     pub content: Vec<Content>,
@@ -19,6 +21,7 @@ pub struct PackageMeta {
 pub struct RepositoryMeta {
     pub name: String,
     pub git_remote: String,
+    pub packages: Vec<Package>,
     pub created_at: u64,
 }
 
@@ -74,13 +77,23 @@ impl<'s> Store<'s> {
         Ok(packages)
     }
 
-    pub async fn find_added_repository(&self, repo_name: &str) -> Result<Option<Transaction>> {
+    pub async fn find_added_repository(&self, repo_name: &str) -> Result<Option<RepositoryMeta>> {
         let mut repo = None;
 
         self.storage
-            .walk(|tx| match &tx.kind {
-                TransactionKind::AddRepository { name, .. } if name == repo_name => {
-                    repo = Some(tx);
+            .walk(|tx| match tx.kind {
+                TransactionKind::AddRepository {
+                    name,
+                    git_remote,
+                    packages,
+                    ..
+                } if name == repo_name => {
+                    repo = Some(RepositoryMeta {
+                        name,
+                        git_remote,
+                        packages,
+                        created_at: tx.created_at,
+                    });
                     false
                 }
                 TransactionKind::RemoveRepository { name, .. } if name == repo_name => {
@@ -102,12 +115,16 @@ impl<'s> Store<'s> {
             .walk(|tx| {
                 match tx.kind {
                     TransactionKind::AddRepository {
-                        name, git_remote, ..
+                        name,
+                        git_remote,
+                        packages,
+                        ..
                     } if !marked.contains_key(&name) => {
                         marked.insert(name.clone(), true);
                         repositories.push(RepositoryMeta {
                             name,
                             git_remote,
+                            packages,
                             created_at: tx.created_at,
                         });
                     }
@@ -149,5 +166,14 @@ impl<'s> Store<'s> {
             .await?;
 
         Ok(installed)
+    }
+
+    pub async fn search_package(&self, package_id: &str) -> Result<Option<Package>> {
+        Ok(self
+            .list_repositories()
+            .await?
+            .into_iter()
+            .flat_map(|repo| repo.packages)
+            .find(|package| format!("{}@{}", package.name, package.version) == package_id))
     }
 }

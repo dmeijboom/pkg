@@ -13,9 +13,16 @@ pub fn root_dir() -> PathBuf {
     ))
 }
 
-pub fn parse_package_config(filename: PathBuf) -> Result<Package> {
+pub fn read_package_config(filename: PathBuf) -> Result<Package> {
     let content = fs::read_to_string(filename)?;
-    let package = serde_dhall::from_str(&content).imports(true).parse()?;
+
+    parse_package_config(content)
+}
+
+pub fn parse_package_config(content: impl AsRef<str>) -> Result<Package> {
+    let package = serde_dhall::from_str(content.as_ref())
+        .imports(true)
+        .parse()?;
 
     Ok(package)
 }

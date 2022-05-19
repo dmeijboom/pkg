@@ -7,7 +7,7 @@ use colored::Colorize;
 
 use crate::install::channel::Receiver;
 use crate::install::{self, Event, Installer, Stage};
-use crate::utils::{parse_package_config, root_dir};
+use crate::utils::{read_package_config, root_dir};
 
 #[derive(Parser)]
 pub struct Opts {
@@ -16,7 +16,7 @@ pub struct Opts {
 
 pub async fn run(opts: Opts) -> Result<()> {
     let root = root_dir();
-    let package = parse_package_config(opts.filename)?;
+    let package = read_package_config(opts.filename)?;
     let package_id = format!("{}@{}", package.name, package.version);
 
     println!("{}", format!(">> validating {}", package_id).blue());

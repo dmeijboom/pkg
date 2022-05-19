@@ -1,7 +1,7 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_dhall::StaticType;
 
-#[derive(Debug, Deserialize, StaticType)]
+#[derive(Debug, Serialize, Deserialize, StaticType)]
 pub struct Source {
     pub url: String,
     pub checksum: String,
@@ -10,7 +10,7 @@ pub struct Source {
 macro_rules! impl_target {
     ($($name:ident),+) => {
         #[allow(non_camel_case_types)]
-        #[derive(Deserialize, Default, Debug, StaticType)]
+        #[derive(Serialize, Deserialize, Default, Debug, StaticType)]
         pub struct Targets {
             $(#[serde(default)]
             pub $name: Vec<Source>,)+
@@ -49,7 +49,7 @@ impl_target!(
 
 macro_rules! impl_sources {
     ($($name:ident),+) => {
-        #[derive(Deserialize, Default, Debug, StaticType)]
+        #[derive(Serialize, Deserialize, Default, Debug, StaticType)]
         pub struct Sources {
             $(#[serde(default)]
             pub $name: Targets,)+
@@ -75,7 +75,7 @@ impl_sources!(
     unknown, linux, macos, ios, freebsd, dragonfly, netbsd, openbsd, solaris, android, windows
 );
 
-#[derive(Deserialize, Debug, StaticType)]
+#[derive(Serialize, Deserialize, Debug, StaticType)]
 pub struct Package {
     pub name: String,
     pub version: String,
